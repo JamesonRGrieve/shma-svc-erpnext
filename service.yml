@@ -1,0 +1,67 @@
+---
+service_contract:
+  name: erpnext
+  version: 1
+  description: >-
+    ERPNext application runtime for the Shared Services framework. The contract
+    exposes a container runtime definition that can be rendered for Docker
+    Compose, Podman, Kubernetes, or other supported adapters by the common
+    runtime roles.
+  dependencies:
+    database:
+      required: true
+      exports:
+        env:
+          - DATABASE_HOST
+          - DATABASE_PORT
+          - DATABASE_NAME
+          - DATABASE_USER
+          - MARIADB_VERSION
+          - DB_SSL_MODE
+        secrets:
+          - DATABASE_PASSWORD
+    cache:
+      required: true
+      exports:
+        env:
+          - CACHE_HOST
+          - CACHE_PORT
+          - REDIS_DB
+        secrets:
+          - CACHE_PASSWORD
+    queue:
+      required: true
+      exports:
+        env:
+          - QUEUE_HOST
+          - QUEUE_PORT
+          - REDIS_DB
+        secrets:
+          - QUEUE_PASSWORD
+    edge:
+      required: false
+      exports:
+        env:
+          - BACKEND_IP
+  exports:
+    env:
+      APP_FQDN:
+        description: Primary public hostname for ERPNext.
+      APP_PORT:
+        description: Published HTTP port for ERPNext traffic.
+      APP_BACKEND_IP:
+        description: Advertised backend IP for intra-cluster access.
+  runtimes:
+    erpnext:
+      description: Default ERPNext container runtime
+      adapters:
+        - adapter: compose
+          src: runtime/compose.yml.j2
+          template: runtime/compose.yml.j2
+          dest: "{{ erpnext_compose_path }}"
+          owner: "{{ erpnext_compose_owner }}"
+          group: "{{ erpnext_compose_group }}"
+          mode: "{{ erpnext_compose_file_mode }}"
+        - adapter: kubernetes
+        - adapter: podman
+        - adapter: proxmox

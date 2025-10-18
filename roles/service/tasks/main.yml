@@ -1,4 +1,70 @@
 ---
+- name: Load ERPNext service contract
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/../../service.yml"
+    name: erpnext_service_contract_data
+
+- name: Normalize dependency export structures
+  ansible.builtin.set_fact:
+    erpnext_dependency_exports_normalized:
+      database_env: "{{ erpnext_database_dependency.env | default({}) }}"
+      database_secrets: "{{ erpnext_database_dependency.secrets | default({}) }}"
+      cache_env: "{{ erpnext_cache_dependency.env | default({}) }}"
+      cache_secrets: "{{ erpnext_cache_dependency.secrets | default({}) }}"
+      queue_env: "{{ erpnext_queue_dependency.env | default({}) }}"
+      queue_secrets: "{{ erpnext_queue_dependency.secrets | default({}) }}"
+
+- name: Resolve ERPNext database connection values
+  vars:
+    override_host_set: "{{ erpnext_database_override_host is defined and (erpnext_database_override_host | string | length) > 0 }}"
+    override_port_set: "{{ erpnext_database_override_port is defined and (erpnext_database_override_port | string | length) > 0 }}"
+    override_name_set: "{{ erpnext_database_override_name is defined and (erpnext_database_override_name | string | length) > 0 }}"
+    override_user_set: "{{ erpnext_database_override_user is defined and (erpnext_database_override_user | string | length) > 0 }}"
+    override_password_set: "{{ erpnext_database_override_password is defined and (erpnext_database_override_password | string | length) > 0 }}"
+  ansible.builtin.set_fact:
+    erpnext_database:
+      host: "{{ override_host_set | ternary(erpnext_database_override_host, erpnext_dependency_exports_normalized.database_env.DATABASE_HOST | default('')) }}"
+      host_source: "{{ override_host_set | ternary('explicit_override', 'dependency_export') }}"
+      port: "{{ override_port_set | ternary(erpnext_database_override_port, erpnext_dependency_exports_normalized.database_env.DATABASE_PORT | default('')) }}"
+      port_source: "{{ override_port_set | ternary('explicit_override', 'dependency_export') }}"
+      name: "{{ override_name_set | ternary(erpnext_database_override_name, erpnext_dependency_exports_normalized.database_env.DATABASE_NAME | default(erpnext_database_default_name, true)) }}"
+      user: "{{ override_user_set | ternary(erpnext_database_override_user, erpnext_dependency_exports_normalized.database_env.DATABASE_USER | default(erpnext_database_default_user, true)) }}"
+      password: "{{ override_password_set | ternary(erpnext_database_override_password, erpnext_dependency_exports_normalized.database_secrets.DATABASE_PASSWORD | default('')) }}"
+      version: "{{ erpnext_dependency_exports_normalized.database_env.MARIADB_VERSION | default(erpnext_database_default_version, true) }}"
+      ssl_mode: "{{ erpnext_dependency_exports_normalized.database_env.get('DB_SSL_MODE', erpnext_database_default_ssl_mode) }}"
+
+- name: Resolve ERPNext cache endpoint values
+  vars:
+    override_host_set: "{{ erpnext_cache_override_host is defined and (erpnext_cache_override_host | string | length) > 0 }}"
+    override_port_set: "{{ erpnext_cache_override_port is defined and (erpnext_cache_override_port | string | length) > 0 }}"
+    override_password_set: "{{ erpnext_cache_override_password is defined and (erpnext_cache_override_password | string | length) > 0 }}"
+  ansible.builtin.set_fact:
+    erpnext_cache:
+      host: "{{ override_host_set | ternary(erpnext_cache_override_host, erpnext_dependency_exports_normalized.cache_env.CACHE_HOST | default('')) }}"
+      port: "{{ override_port_set | ternary(erpnext_cache_override_port, erpnext_dependency_exports_normalized.cache_env.CACHE_PORT | default('')) }}"
+      password: "{{ override_password_set | ternary(erpnext_cache_override_password, erpnext_dependency_exports_normalized.cache_secrets.CACHE_PASSWORD | default('')) }}"
+      db: "{{ erpnext_dependency_exports_normalized.cache_env.REDIS_DB | default(erpnext_cache_default_db, true) }}"
+      requirepass: true
+      protected_mode: true
+
+- name: Resolve ERPNext queue endpoint values
+  vars:
+    override_host_set: "{{ erpnext_queue_override_host is defined and (erpnext_queue_override_host | string | length) > 0 }}"
+    override_port_set: "{{ erpnext_queue_override_port is defined and (erpnext_queue_override_port | string | length) > 0 }}"
+    override_password_set: "{{ erpnext_queue_override_password is defined and (erpnext_queue_override_password | string | length) > 0 }}"
+  ansible.builtin.set_fact:
+    erpnext_queue:
+      host: "{{ override_host_set | ternary(erpnext_queue_override_host, erpnext_dependency_exports_normalized.queue_env.QUEUE_HOST | default(erpnext_dependency_exports_normalized.cache_env.CACHE_HOST | default(''))) }}"
+      port: "{{ override_port_set | ternary(erpnext_queue_override_port, erpnext_dependency_exports_normalized.queue_env.QUEUE_PORT | default(erpnext_dependency_exports_normalized.cache_env.CACHE_PORT | default(''))) }}"
+      password: "{{ override_password_set | ternary(erpnext_queue_override_password, erpnext_dependency_exports_normalized.queue_secrets.QUEUE_PASSWORD | default(erpnext_dependency_exports_normalized.cache_secrets.CACHE_PASSWORD | default(''))) }}"
+      db: "{{ erpnext_dependency_exports_normalized.queue_env.REDIS_DB | default(erpnext_queue_default_db, true) }}"
+      requirepass: true
+      protected_mode: true
+
+- name: Show resolved database endpoint
+  ansible.builtin.debug:
+    msg: "Database: {{ erpnext_database.host }}:{{ erpnext_database.port }} (source: {{ erpnext_database.host_source }})"
+
 - name: Validate ERPNext secret values are defined
   ansible.builtin.assert:
     that:
@@ -23,70 +89,47 @@
     that:
       - erpnext_database.host is string
       - erpnext_database.host | length > 0
+      - erpnext_database.port is string
       - (erpnext_database.port | int) > 0
     fail_msg: >-
-      MariaDB peer exports must provide DATABASE_HOST and DATABASE_PORT.
-      Configure the dependency relationship instead of relying on
-      runtime-specific DNS shortcuts.
+      MariaDB peer exports must provide DATABASE_HOST and DATABASE_PORT,
+      or explicit overrides must be defined.
 
 - name: Validate Redis connection settings
   ansible.builtin.assert:
     that:
       - erpnext_cache.host is string
       - erpnext_cache.host | length > 0
+      - erpnext_cache.port is string
       - (erpnext_cache.port | int) > 0
       - erpnext_queue.host is string
       - erpnext_queue.host | length > 0
+      - erpnext_queue.port is string
       - (erpnext_queue.port | int) > 0
     fail_msg: >-
       Redis peer exports must provide CACHE_HOST/CACHE_PORT (and
       QUEUE_HOST/QUEUE_PORT when distinct). Configure peer bindings
       instead of depending on Docker specific hostnames.
 
-- name: Validate ERPNext image digest inputs
+- name: Validate ERPNext images are digest pinned
   vars:
-    erpnext_digest_variables:
-      - { name: "ERPNEXT_FRONTEND_DIGEST", value: "{{ erpnext_frontend_digest }}" }
-      - { name: "ERPNEXT_BACKEND_DIGEST", value: "{{ erpnext_backend_digest }}" }
-      - { name: "ERPNEXT_SCHEDULER_DIGEST", value: "{{ erpnext_scheduler_digest }}" }
-      - { name: "ERPNEXT_QUEUE_DIGEST", value: "{{ erpnext_queue_digest }}" }
-      - { name: "ERPNEXT_CONFIGURATOR_DIGEST", value: "{{ erpnext_configurator_digest }}" }
-      - { name: "ERPNEXT_SOCKETIO_DIGEST", value: "{{ erpnext_socketio_digest }}" }
+    image_items: "{{ erpnext_images | dict2items }}"
   ansible.builtin.assert:
     that:
       - item.value is string
-      - (item.value | length == 0) or (item.value is match('^sha256:[0-9a-f]{64}$'))
+      - item.value | length > 0
+      - item.value is match('^.+@sha256:[0-9a-f]{64}$')
     fail_msg: >-
-      {{ item.name }} must be empty or a digest value in the form
-      sha256:<64 hex characters>.
-  loop: "{{ erpnext_digest_variables }}"
+      {{ item.key }} image must be provided as repository@sha256:<digest>.
+      Configure ERPNEXT_{{ item.key | upper }}_IMAGE accordingly.
+  loop: "{{ image_items }}"
   loop_control:
-    label: "{{ item.name }}"
-
-- name: Ensure ERPNext container images are digest pinned
-  ansible.builtin.assert:
-    that:
-      - erpnext_images.frontend is string
-      - erpnext_images.frontend is match('^.+@sha256:[0-9a-f]{64}$')
-      - erpnext_images.backend is string
-      - erpnext_images.backend is match('^.+@sha256:[0-9a-f]{64}$')
-      - erpnext_images.scheduler is string
-      - erpnext_images.scheduler is match('^.+@sha256:[0-9a-f]{64}$')
-      - erpnext_images.queue is string
-      - erpnext_images.queue is match('^.+@sha256:[0-9a-f]{64}$')
-      - erpnext_images.socketio is string
-      - erpnext_images.socketio is match('^.+@sha256:[0-9a-f]{64}$')
-      - erpnext_images.configurator is string
-      - erpnext_images.configurator is match('^.+@sha256:[0-9a-f]{64}$')
-    fail_msg: >-
-      Container images must be referenced by immutable digests. Provide
-      repository@sha256:<digest> values via ERPNEXT_*_IMAGE or
-      ERPNEXT_*_DIGEST settings.
+    label: "{{ item.key }}"
 
 - name: Ensure Redis queue and cache are isolated
   ansible.builtin.assert:
     that:
-      - erpnext_cache.db != erpnext_queue.db
+      - (erpnext_cache.db | int) != (erpnext_queue.db | int)
       - erpnext_cache.requirepass | bool
       - erpnext_queue.requirepass | bool
     fail_msg: >-
@@ -99,35 +142,197 @@
       - (erpnext_wait_for_services_timeout | int) >= 300
     fail_msg: >-
       ERPNext bootstrap helpers frequently take longer than 120 seconds.
-      Increase erpnext_wait_for_services_timeout to at least 300 seconds.
+      Increase erpnext_wait_for_services_timeout_multiplier for slow environments.
+
+- name: Compute ERPNext database version bounds
+  ansible.builtin.set_fact:
+    erpnext_database_required_version_floor: "{{ erpnext_database_required_major_minor | versioning.version_floor }}"
+    erpnext_database_required_version_ceiling: "{{ erpnext_database_required_major_minor | versioning.version_ceiling }}"
 
 - name: Enforce MariaDB catalog alignment
   ansible.builtin.assert:
     that:
-      - erpnext_database.version is string
-      - erpnext_database.version is version(erpnext_database_required_version_floor, '>=')
-      - erpnext_database.version is version(erpnext_database_required_version_ceiling, '<')
+      - erpnext_database.version | versioning.version_in_range(erpnext_database_required_version_floor, erpnext_database_required_version_ceiling)
     fail_msg: >-
       ERPNext must target the shared MariaDB {{ erpnext_database_required_major_minor }} catalog.
 
-- name: Determine disabled ERPNext runtime services
+- name: Prefix extra environment variables
   ansible.builtin.set_fact:
-    erpnext_runtime_disabled_services: "{{
-      ([] if erpnext_configurator_enabled else ['erpnext-site-creator'])
-      + ([] if erpnext_upgrade_play_enabled else ['erpnext-upgrade'])
-    }}"
+    erpnext_extra_env_prefixed: {}
+    erpnext_socketio_extra_env_prefixed: {}
 
-- name: Initialize ERPNext runtime service map
+- name: Register prefixed ERPNext extra env values
   ansible.builtin.set_fact:
-    erpnext_runtime_services_active: {}
-
-- name: Add enabled ERPNext runtime services
-  ansible.builtin.set_fact:
-    erpnext_runtime_services_active: "{{ erpnext_runtime_services_active | combine({item.key: item.value}, recursive=True) }}"
-  loop: "{{ erpnext_runtime_services | dict2items }}"
-  when: item.key not in erpnext_runtime_disabled_services
+    erpnext_extra_env_prefixed: "{{ erpnext_extra_env_prefixed | combine({'ERPNEXT_EXTRA_' + item.key: item.value}) }}"
+  loop: "{{ erpnext_extra_env | dict2items }}"
   loop_control:
     label: "{{ item.key }}"
+
+- name: Register prefixed ERPNext socketio extra env values
+  ansible.builtin.set_fact:
+    erpnext_socketio_extra_env_prefixed: "{{ erpnext_socketio_extra_env_prefixed | combine({'ERPNEXT_EXTRA_' + item.key: item.value}) }}"
+  loop: "{{ erpnext_socketio_extra_env | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Ensure extra environment variables do not collide with required keys
+  vars:
+    reserved_keys: "{{ (erpnext_runtime_environment_base.keys() | list) + ['DB_HOST', 'DB_PORT', 'APP_FQDN', 'APP_PORT', 'APP_BACKEND_IP'] }}"
+  ansible.builtin.assert:
+    that:
+      - erpnext_extra_env_prefixed.keys() | intersect(reserved_keys) | length == 0
+      - erpnext_socketio_extra_env_prefixed.keys() | intersect(reserved_keys) | length == 0
+    fail_msg: >-
+      Extra ERPNext environment variables must not override required configuration values.
+
+- name: Compose ERPNext runtime environment values
+  vars:
+    environment_config: "{{ erpnext_runtime_environment_base | combine({
+      'DB_HOST': erpnext_database.host,
+      'DB_PORT': erpnext_database.port,
+      'DB_NAME': erpnext_database.name,
+      'DB_USER': erpnext_database.user,
+      'DB_SSL_MODE': erpnext_database.ssl_mode,
+      'MARIADB_VERSION': erpnext_database.version
+    }, recursive=True) | combine(erpnext_extra_env_prefixed) }}"
+    secret_values:
+      DB_PASSWORD: "{{ erpnext_database.password }}"
+      SITE_PASSWORD: "{{ erpnext_site_admin_password }}"
+  ansible.builtin.set_fact:
+    erpnext_runtime_environment_config: "{{ environment_config }}"
+    erpnext_runtime_secret_env_values: "{{ secret_values | combine({
+      'REDIS_QUEUE': 'redis://:%s@%s:%s/%s' % (erpnext_queue.password | urlencode, erpnext_queue.host, erpnext_queue.port, erpnext_queue.db),
+      'REDIS_QUEUE_FOR_EVENTS': 'redis://:%s@%s:%s/%s' % (erpnext_queue.password | urlencode, erpnext_queue.host, erpnext_queue.port, erpnext_queue.db),
+      'REDIS_CACHE': 'redis://:%s@%s:%s/%s' % (erpnext_cache.password | urlencode, erpnext_cache.host, erpnext_cache.port, erpnext_cache.db),
+      'SOCKETIO_REDIS_URL': 'redis://:%s@%s:%s/%s' % (erpnext_queue.password | urlencode, erpnext_queue.host, erpnext_queue.port, erpnext_queue.db),
+      'REDIS_URL': 'redis://:%s@%s:%s/%s' % (erpnext_queue.password | urlencode, erpnext_queue.host, erpnext_queue.port, erpnext_queue.db)
+    }) }}"
+
+- name: Merge Socket.IO specific configuration
+  ansible.builtin.set_fact:
+    erpnext_socketio_environment_config: "{{ erpnext_runtime_environment_config | combine(erpnext_socketio_extra_env_prefixed) }}"
+
+- name: Validate secret isolation
+  vars:
+    config_values: "{{ erpnext_runtime_environment_config.values() | list }}"
+    socketio_values: "{{ erpnext_socketio_environment_config.values() | list }}"
+    secret_values: "{{ erpnext_runtime_secret_env_values.values() | list }}"
+  ansible.builtin.assert:
+    that:
+      - (secret_values | intersect(config_values)) | length == 0
+      - (secret_values | intersect(socketio_values)) | length == 0
+    fail_msg: >-
+      Secret values must be passed via secret environment variables only. Remove plaintext secrets from the config environment.
+
+- name: Validate ERPNext extra secret coverage
+  ansible.builtin.assert:
+    that:
+      - erpnext_runtime_secret_env_keys | difference(erpnext_runtime_secret_env_values.keys()) | length == 0
+    fail_msg: >-
+      All runtime secret keys must be defined before rendering the runtime specification.
+
+- name: Verify proxy configuration requirement
+  ansible.builtin.assert:
+    that:
+      - (not erpnext_require_proxy) or erpnext_proxy_configured
+    fail_msg: >-
+      This deployment expects a reverse proxy that injects X-Forwarded-* headers.
+      Set erpnext_proxy_configured=true after provisioning the ingress layer.
+
+- name: Validate Redis connectivity
+  vars:
+    redis_checks:
+      - name: cache
+        host: "{{ erpnext_cache.host }}"
+        port: "{{ erpnext_cache.port }}"
+        password: "{{ erpnext_cache.password }}"
+      - name: queue
+        host: "{{ erpnext_queue.host }}"
+        port: "{{ erpnext_queue.port }}"
+        password: "{{ erpnext_queue.password }}"
+  ansible.builtin.command:
+    argv:
+      - redis-cli
+      - -h
+      - "{{ item.host }}"
+      - -p
+      - "{{ item.port }}"
+      - -a
+      - "{{ item.password }}"
+      - ping
+  when: erpnext_validate_redis_connections | bool
+  loop: "{{ redis_checks }}"
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: true
+
+- name: Build ERPNext runtime volumes map
+  ansible.builtin.set_fact:
+    erpnext_runtime_volumes: {}
+
+- name: Register ERPNext runtime volumes
+  ansible.builtin.set_fact:
+    erpnext_runtime_volumes: "{{ erpnext_runtime_volumes | combine({item: {}}) }}"
+  loop: "{{ erpnext_runtime_volumes_requested }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Validate persistent mounts reference known volumes
+  ansible.builtin.assert:
+    that:
+      - erpnext_mounts.persistent | map(attribute='source') | difference(erpnext_runtime_volumes.keys() | list) | length == 0
+    fail_msg: >-
+      Every persistent mount must reference a declared volume.
+
+- name: Compose ERPNext runtime mounts
+  ansible.builtin.set_fact:
+    erpnext_runtime_mounts:
+      persistent: "{{ erpnext_mounts.persistent }}"
+      ephemeral: "{{ erpnext_mounts.ephemeral_mounts }}"
+
+- name: Materialize ERPNext runtime services
+  ansible.builtin.set_fact:
+    erpnext_runtime_services_materialized: {}
+
+- name: Compose ERPNext runtime service map
+  vars:
+    service_defaults: "{{ erpnext_runtime_common_container_settings | combine({'networks': erpnext_networks | map(attribute='name') | list, 'mounts': erpnext_runtime_mounts}, recursive=True) }}"
+    service_ports: "{{ item.value.ports | default([]) }}"
+    service_expose: "{{ item.value.expose | default([]) }}"
+    service_depends: "{{ item.value.depends_on | default({}) }}"
+    service_profiles: "{{ item.value.profiles | default([]) }}"
+    config_overrides: "{{ item.value.environment.config | default({}) }}"
+    config_base: "{{ 'erpnext-socketio' == item.key | ternary(erpnext_socketio_environment_config, erpnext_runtime_environment_config) }}"
+    secret_keys: "{{ item.value.environment.inherit_secrets | default([]) }}"
+    service_secrets: "{{ erpnext_runtime_secret_env_values | dict2items | selectattr('key', 'in', secret_keys) | items2dict }}"
+    base_limits: "{{ erpnext_limits[item.value.limits_key] | default(erpnext_default_limits) }}"
+    stack_resources: "{{ erpnext_compose_mode == 'stack' | ternary({'deploy': {'resources': {'reservations': base_limits.reservations, 'limits': base_limits.limits}}}, {}) }}"
+    local_resources: "{{ erpnext_compose_mode == 'local' | ternary({'resource_limits': base_limits.limits}, {}) }}"
+    service_entry: "{{ service_defaults | combine({
+      'image': erpnext_images[item.value.image_key],
+      'command': item.value.command,
+      'environment': {
+        'config': config_base | combine(config_overrides, recursive=True),
+        'secrets': service_secrets
+      },
+      'ports': service_ports,
+      'expose': service_expose,
+      'depends_on': service_depends,
+      'profiles': service_profiles,
+      'healthcheck': item.value.healthcheck | default(omit),
+      'restart': item.value.restart | default(service_defaults.restart)
+    }, recursive=True) | combine(stack_resources, recursive=True) | combine(local_resources, recursive=True) }}"
+  ansible.builtin.set_fact:
+    erpnext_runtime_services_materialized: "{{ erpnext_runtime_services_materialized | combine({ item.key: service_entry }) }}"
+  loop: "{{ erpnext_runtime_services_blueprint | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Disable optional runtime services
+  vars:
+    disabled_services: "{{ ([] if erpnext_create_site else ['erpnext-site-creator']) + ([] if erpnext_enable_upgrade_helper else ['erpnext-upgrade']) }}"
+  ansible.builtin.set_fact:
+    erpnext_runtime_services_active: "{{ erpnext_runtime_services_materialized | dict2items | rejectattr('key', 'in', disabled_services) | items2dict }}"
 
 - name: Compose ERPNext runtime definition
   ansible.builtin.set_fact:
@@ -135,9 +340,38 @@
       name: "{{ erpnext_runtime_name }}"
       networks: "{{ erpnext_networks }}"
       volumes: "{{ erpnext_runtime_volumes }}"
-      mounts: "{{ erpnext_mounts }}"
+      mounts: "{{ erpnext_runtime_mounts }}"
       services: "{{ erpnext_runtime_services_active }}"
       exports: "{{ erpnext_runtime_exports }}"
+
+- name: Validate declared networks exist when marked external
+  community.docker.docker_network_info:
+    name: "{{ item.name }}"
+  loop: "{{ erpnext_runtime_spec.networks | selectattr('external', 'equalto', True) | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: erpnext_network_info_results
+  failed_when: false
+
+- name: Assert external networks are available
+  when: erpnext_network_info_results.results | length > 0
+  vars:
+    inspected_results: "{{ erpnext_network_info_results.results }}"
+    available_networks: "{{ inspected_results | selectattr('networks', 'defined') | list }}"
+    network_lengths: "{{ available_networks | map(attribute='networks') | map('length') | list }}"
+  ansible.builtin.assert:
+    that:
+      - inspected_results | selectattr('failed', 'defined') | selectattr('failed') | list | length == 0
+      - network_lengths | length > 0
+      - network_lengths | min >= 1
+    fail_msg: >-
+      One or more required external Docker networks are missing. Create them before deploying ERPNext.
+
+- name: Validate runtime adapters from service contract
+  vars:
+    erpnext_runtime_contract: "{{ erpnext_service_contract_data.service_contract.runtimes[erpnext_service_contract_runtime] }}"
+  ansible.builtin.set_fact:
+    erpnext_runtime_templates_resolved: "{{ erpnext_runtime_contract.adapters | default([]) }}"
 
 - name: Render ERPNext runtime adapters
   ansible.builtin.include_role:
@@ -145,7 +379,7 @@
   vars:
     runtime_name: "{{ erpnext_runtime_spec.name }}"
     runtime_definition: "{{ erpnext_runtime_spec }}"
-    runtime_templates: "{{ erpnext_runtime_templates }}"
+    runtime_templates: "{{ erpnext_runtime_templates_resolved }}"
 
 - name: Apply ERPNext runtime definition
   ansible.builtin.include_role:
