@@ -110,7 +110,6 @@ erpnext_database:
     | default(lookup('ansible.builtin.vars', 'DATABASE_PORT'), true)
     | default(lookup('ansible.builtin.vars', 'MARIADB_PORT'), true)
     | default(lookup('ansible.builtin.vars', 'MARIADB_SERVICE_PORT'), true)
-    | default(3306, true)
   }}"
   name: "{{
     lookup('ansible.builtin.env', 'DATABASE_NAME')
@@ -139,7 +138,6 @@ erpnext_cache:
     lookup('ansible.builtin.env', 'CACHE_PORT')
     | default(lookup('ansible.builtin.vars', 'CACHE_PORT'), true)
     | default(lookup('ansible.builtin.vars', 'REDIS_PORT'), true)
-    | default(6379, true)
   }}"
   password: "{{
     lookup('ansible.builtin.env', 'CACHE_PASSWORD')
@@ -163,7 +161,6 @@ erpnext_queue:
     | default(lookup('ansible.builtin.env', 'CACHE_PORT'), true)
     | default(lookup('ansible.builtin.vars', 'CACHE_PORT'), true)
     | default(lookup('ansible.builtin.vars', 'REDIS_PORT'), true)
-    | default(6379, true)
   }}"
   password: "{{
     lookup('ansible.builtin.env', 'QUEUE_PASSWORD')
@@ -186,7 +183,12 @@ erpnext_extra_env: {}
 erpnext_volumes:
   sites: "erpnext-sites"
   assets: "erpnext-assets"
-  logs: "erpnext-logs"
+
+erpnext_tmpfs_mounts:
+  - target: "/tmp"
+    options: "rw,nosuid,nodev,noexec,size=64m"
+  - target: "/home/frappe/frappe-bench/logs"
+    options: "rw,nosuid,nodev,noexec,size=256m"
 
 erpnext_upgrade_play_enabled: true
 
