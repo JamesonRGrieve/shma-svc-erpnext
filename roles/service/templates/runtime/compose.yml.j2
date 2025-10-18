@@ -1,9 +1,25 @@
 {% set runtime = runtime_definition | default(erpnext_runtime_spec) %}
-{% set services = runtime.services %}
+{% macro render_list(values, indent=4) -%}
+{% for value in values %}
+{{ ' ' * indent }}- {{ value }}
+{% endfor %}
+{%- endmacro %}
+{% macro render_key_value(mapping, indent=6) -%}
+{% for key, value in mapping | dictsort %}
+{{ ' ' * indent }}{{ key }}: "{{ value | string }}"
+{% endfor %}
+{%- endmacro %}
+{% macro render_environment(env, indent=4) -%}
+{% if (env.config | default({})) or (env.secrets | default({})) %}
+{{ ' ' * indent }}environment:
+{% if env.config is defined %}{{ render_key_value(env.config, indent + 2) }}{% endif %}
+{% if env.secrets is defined %}{{ render_key_value(env.secrets, indent + 2) }}{% endif %}
+{% endif %}
+{%- endmacro %}
 version: "3.9"
 
 services:
-{% for service_name, service in services | dictsort %}
+{% for service_name, service in runtime.services | dictsort %}
   {{ service_name }}:
     image: "{{ service.image }}"
 {% if service.user is defined %}
@@ -20,28 +36,16 @@ services:
 {% endif %}
 {% if service.cap_drop is defined and service.cap_drop %}
     cap_drop:
-{% for cap in service.cap_drop %}
-      - {{ cap }}
-{% endfor %}
+{{ render_list(service.cap_drop, 6) }}
 {% endif %}
 {% if service.security_opt is defined and service.security_opt %}
     security_opt:
-{% for opt in service.security_opt %}
-      - {{ opt }}
-{% endfor %}
+{{ render_list(service.security_opt, 6) }}
 {% endif %}
 {% if service.command is defined %}
     command: {{ service.command | to_json }}
 {% endif %}
-{% if service.environment is defined and (service.environment.config or service.environment.secrets) %}
-    environment:
-{% for key, value in (service.environment.config | default({})) | dictsort %}
-      {{ key }}: "{{ value | string }}"
-{% endfor %}
-{% for key, value in (service.environment.secrets | default({})) | dictsort %}
-      {{ key }}: "{{ value | string }}"
-{% endfor %}
-{% endif %}
+{{ render_environment(service.environment | default({}), 4) }}
 {% if service.ports is defined and service.ports %}
     ports:
 {% for port in service.ports %}
@@ -50,9 +54,7 @@ services:
 {% endif %}
 {% if service.expose is defined and service.expose %}
     expose:
-{% for expose in service.expose %}
-      - "{{ expose }}"
-{% endfor %}
+{{ render_list(service.expose, 6) }}
 {% endif %}
 {% if service.depends_on is defined and service.depends_on %}
     depends_on:
@@ -83,27 +85,14 @@ services:
 {% endif %}
 {% if service.deploy is defined %}
     deploy: {{ service.deploy | to_nice_yaml(indent=6) | trim }}
-{% elif service.resources is defined %}
-    deploy:
-      resources:
-{% if service.resources.reservations is defined %}
-        reservations:
-{% for key, value in service.resources.reservations.items() %}
-          {{ key }}: "{{ value }}"
-{% endfor %}
 {% endif %}
-{% if service.resources.limits is defined %}
-        limits:
-{% for key, value in service.resources.limits.items() %}
-          {{ key }}: "{{ value }}"
-{% endfor %}
-{% endif %}
+{% if service.resource_limits is defined %}
+    mem_limit: "{{ service.resource_limits.memory }}"
+    cpus: "{{ service.resource_limits.cpus }}"
 {% endif %}
 {% if service.networks is defined and service.networks %}
     networks:
-{% for network in service.networks %}
-      - {{ network }}
-{% endfor %}
+{{ render_list(service.networks, 6) }}
 {% endif %}
 {% if service.mounts is defined and service.mounts.persistent is defined and service.mounts.persistent %}
     volumes:
@@ -119,9 +108,7 @@ services:
 {% endif %}
 {% if service.profiles is defined and service.profiles %}
     profiles:
-{% for profile in service.profiles %}
-      - {{ profile }}
-{% endfor %}
+{{ render_list(service.profiles, 6) }}
 {% endif %}
 {% endfor %}
 

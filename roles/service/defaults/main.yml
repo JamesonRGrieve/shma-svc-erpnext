@@ -1,8 +1,10 @@
 ---
-erpnext_compose_path: "/opt/containers/erpnext/lxc.yml"
+erpnext_compose_path: "/opt/containers/erpnext/runtime.compose.yml"
 erpnext_compose_owner: "root"
 erpnext_compose_group: "root"
-erpnext_compose_mode: "0640"
+erpnext_compose_file_mode: "0640"
+# stack|local - determines how container resources are rendered for compose runtimes
+erpnext_compose_mode: "stack"
 
 erpnext_project_name: "erpnext"
 erpnext_runtime_name: "{{ erpnext_project_name }}"
@@ -16,14 +18,12 @@ erpnext_internal_ports:
   socketio: 9000
 
 erpnext_http_port: 8080
-erpnext_backend_advertised_ip: "{{
-  lookup('ansible.builtin.env', 'APP_BACKEND_IP')
-  | default(lookup('ansible.builtin.vars', 'APP_BACKEND_IP'), true)
-  | default(erpnext_dependency_exports.edge.backend_ip, true)
-  | default('0.0.0.0', true)
-}}"
+erpnext_backend_advertised_ip_override: "{{ lookup('ansible.builtin.env', 'APP_BACKEND_IP') | default(lookup('ansible.builtin.vars', 'APP_BACKEND_IP'), true) }}"
+erpnext_backend_advertised_ip: "{{ erpnext_backend_advertised_ip_override | default(erpnext_dependency_exports.edge.backend_ip, true) | default('0.0.0.0', true) }}"
 
-erpnext_wait_for_services_timeout: 600
+erpnext_wait_for_services_timeout_base: 600
+erpnext_wait_for_services_timeout_multiplier: 1.0
+erpnext_wait_for_services_timeout: "{{ (erpnext_wait_for_services_timeout_base * erpnext_wait_for_services_timeout_multiplier) | round(0, 'ceil') | int }}"
 
 erpnext_invalid_placeholder_tokens:
   - ""
@@ -31,13 +31,6 @@ erpnext_invalid_placeholder_tokens:
   - "CHANGE-ME"
   - "changeme"
   - "CHANGE_ME"
-
-erpnext_frontend_digest: "{{ lookup('ansible.builtin.env', 'ERPNEXT_FRONTEND_DIGEST') | default(lookup('ansible.builtin.vars', 'ERPNEXT_FRONTEND_DIGEST'), true) | default('', true) }}"
-erpnext_backend_digest: "{{ lookup('ansible.builtin.env', 'ERPNEXT_BACKEND_DIGEST') | default(lookup('ansible.builtin.vars', 'ERPNEXT_BACKEND_DIGEST'), true) | default('', true) }}"
-erpnext_scheduler_digest: "{{ lookup('ansible.builtin.env', 'ERPNEXT_SCHEDULER_DIGEST') | default(lookup('ansible.builtin.vars', 'ERPNEXT_SCHEDULER_DIGEST'), true) | default(erpnext_backend_digest, true) }}"
-erpnext_queue_digest: "{{ lookup('ansible.builtin.env', 'ERPNEXT_QUEUE_DIGEST') | default(lookup('ansible.builtin.vars', 'ERPNEXT_QUEUE_DIGEST'), true) | default(erpnext_backend_digest, true) }}"
-erpnext_configurator_digest: "{{ lookup('ansible.builtin.env', 'ERPNEXT_CONFIGURATOR_DIGEST') | default(lookup('ansible.builtin.vars', 'ERPNEXT_CONFIGURATOR_DIGEST'), true) | default(erpnext_backend_digest, true) }}"
-erpnext_socketio_digest: "{{ lookup('ansible.builtin.env', 'ERPNEXT_SOCKETIO_DIGEST') | default(lookup('ansible.builtin.vars', 'ERPNEXT_SOCKETIO_DIGEST'), true) | default('', true) }}"
 
 erpnext_image_repositories:
   frontend: "ghcr.io/frappe/erpnext-nginx"
@@ -48,159 +41,64 @@ erpnext_image_repositories:
   configurator: "ghcr.io/frappe/erpnext-worker"
 
 erpnext_images:
-  frontend: "{{ lookup('ansible.builtin.env', 'ERPNEXT_FRONTEND_IMAGE') | default(erpnext_image_repositories.frontend ~ '@' ~ erpnext_frontend_digest, true) }}"
-  backend: "{{ lookup('ansible.builtin.env', 'ERPNEXT_BACKEND_IMAGE') | default(erpnext_image_repositories.backend ~ '@' ~ erpnext_backend_digest, true) }}"
-  scheduler: "{{ lookup('ansible.builtin.env', 'ERPNEXT_SCHEDULER_IMAGE') | default(erpnext_image_repositories.scheduler ~ '@' ~ erpnext_scheduler_digest, true) }}"
-  queue: "{{ lookup('ansible.builtin.env', 'ERPNEXT_QUEUE_IMAGE') | default(erpnext_image_repositories.queue ~ '@' ~ erpnext_queue_digest, true) }}"
-  socketio: "{{ lookup('ansible.builtin.env', 'ERPNEXT_SOCKETIO_IMAGE') | default(erpnext_image_repositories.socketio ~ '@' ~ erpnext_socketio_digest, true) }}"
-  configurator: "{{ lookup('ansible.builtin.env', 'ERPNEXT_CONFIGURATOR_IMAGE') | default(erpnext_image_repositories.configurator ~ '@' ~ erpnext_configurator_digest, true) }}"
+  frontend: "{{ lookup('ansible.builtin.env', 'ERPNEXT_FRONTEND_IMAGE') | default(lookup('ansible.builtin.vars', 'ERPNEXT_FRONTEND_IMAGE'), true) }}"
+  backend: "{{ lookup('ansible.builtin.env', 'ERPNEXT_BACKEND_IMAGE') | default(lookup('ansible.builtin.vars', 'ERPNEXT_BACKEND_IMAGE'), true) }}"
+  scheduler: "{{ lookup('ansible.builtin.env', 'ERPNEXT_SCHEDULER_IMAGE') | default(lookup('ansible.builtin.vars', 'ERPNEXT_SCHEDULER_IMAGE'), true) | default(erpnext_images.backend, true) }}"
+  queue: "{{ lookup('ansible.builtin.env', 'ERPNEXT_QUEUE_IMAGE') | default(lookup('ansible.builtin.vars', 'ERPNEXT_QUEUE_IMAGE'), true) | default(erpnext_images.backend, true) }}"
+  socketio: "{{ lookup('ansible.builtin.env', 'ERPNEXT_SOCKETIO_IMAGE') | default(lookup('ansible.builtin.vars', 'ERPNEXT_SOCKETIO_IMAGE'), true) }}"
+  configurator: "{{ lookup('ansible.builtin.env', 'ERPNEXT_CONFIGURATOR_IMAGE') | default(lookup('ansible.builtin.vars', 'ERPNEXT_CONFIGURATOR_IMAGE'), true) | default(erpnext_images.backend, true) }}"
+
+erpnext_default_limits:
+  reservations:
+    cpus: "0.5"
+    memory: "512M"
+  limits:
+    cpus: "2.0"
+    memory: "1G"
 
 erpnext_limits:
-  frontend:
-    reservations:
-      cpus: "0.5"
-      memory: "512M"
-    limits:
-      cpus: "2.0"
-      memory: "1G"
-  backend:
-    reservations:
-      cpus: "1.0"
-      memory: "1G"
-    limits:
-      cpus: "3.0"
-      memory: "4G"
-  socketio:
-    reservations:
-      cpus: "0.25"
-      memory: "256M"
-    limits:
-      cpus: "1.0"
-      memory: "512M"
-  scheduler:
-    reservations:
-      cpus: "0.25"
-      memory: "512M"
-    limits:
-      cpus: "1.0"
-      memory: "1G"
-  queue:
-    reservations:
-      cpus: "0.5"
-      memory: "1G"
-    limits:
-      cpus: "2.0"
-      memory: "2G"
-  configurator:
-    reservations:
-      cpus: "0.25"
-      memory: "512M"
-    limits:
-      cpus: "1.0"
-      memory: "1G"
+  frontend: {{ erpnext_default_limits }}
+  backend: {{ erpnext_default_limits | combine({'reservations': {'cpus': '1.0', 'memory': '1G'}, 'limits': {'cpus': '3.0', 'memory': '4G'}}, recursive=True) }}
+  socketio: {{ erpnext_default_limits | combine({'reservations': {'cpus': '0.25', 'memory': '256M'}, 'limits': {'cpus': '1.0', 'memory': '512M'}}, recursive=True) }}
+  scheduler: {{ erpnext_default_limits | combine({'reservations': {'cpus': '0.25', 'memory': '512M'}}, recursive=True) }}
+  queue: {{ erpnext_default_limits | combine({'reservations': {'cpus': '0.5', 'memory': '1G'}, 'limits': {'cpus': '2.0', 'memory': '2G'}}, recursive=True) }}
+  configurator: {{ erpnext_default_limits | combine({'reservations': {'cpus': '0.25', 'memory': '512M'}}, recursive=True) }}
+  upgrade: {{ erpnext_default_limits | combine({'reservations': {'cpus': '0.25', 'memory': '512M'}}, recursive=True) }}
 
 erpnext_networks:
   - name: "svc-overlay"
     external: true
-
-erpnext_runtime_network_names: "{{ erpnext_networks | map(attribute='name') | list }}"
-
-erpnext_database_required_major_minor: "10.11"
-erpnext_database_required_version_floor: "{{ erpnext_database_required_major_minor ~ '.0' }}"
-erpnext_database_required_version_ceiling: "{{
-  erpnext_database_required_major_minor.split('.')[0]
-  ~ '.'
-  ~ (((erpnext_database_required_major_minor.split('.')[1] | int) + 1) | string)
-  ~ '.0'
-}}"
+    required: true
 
 erpnext_dependency_exports: "{{ dependency_exports | default({}) }}"
 erpnext_database_dependency: "{{ erpnext_dependency_exports.database | default({}) }}"
 erpnext_cache_dependency: "{{ erpnext_dependency_exports.cache | default({}) }}"
 erpnext_queue_dependency: "{{ erpnext_dependency_exports.queue | default(erpnext_dependency_exports.cache | default({})) }}"
 
-erpnext_database:
-  host: "{{
-    lookup('ansible.builtin.env', 'DATABASE_HOST')
-    | default(lookup('ansible.builtin.vars', 'DATABASE_HOST'), true)
-    | default(erpnext_database_dependency.host, true)
-    | default(lookup('ansible.builtin.vars', 'MARIADB_HOST'), true)
-    | default(lookup('ansible.builtin.vars', 'MARIADB_SERVICE_HOST'), true)
-  }}"
-  port: "{{
-    lookup('ansible.builtin.env', 'DATABASE_PORT')
-    | default(lookup('ansible.builtin.vars', 'DATABASE_PORT'), true)
-    | default(erpnext_database_dependency.port, true)
-    | default(lookup('ansible.builtin.vars', 'MARIADB_PORT'), true)
-    | default(lookup('ansible.builtin.vars', 'MARIADB_SERVICE_PORT'), true)
-  }}"
-  name: "{{
-    lookup('ansible.builtin.env', 'DATABASE_NAME')
-    | default(lookup('ansible.builtin.vars', 'DATABASE_NAME'), true)
-    | default('erpnext', true)
-  }}"
-  user: "{{
-    lookup('ansible.builtin.env', 'DATABASE_USER')
-    | default(lookup('ansible.builtin.vars', 'DATABASE_USER'), true)
-    | default('erpnext', true)
-  }}"
-  password: "{{
-    lookup('ansible.builtin.env', 'DATABASE_PASSWORD')
-    | default(lookup('ansible.builtin.vars', 'DATABASE_PASSWORD'), true)
-    | default(erpnext_database_dependency.password, true)
-  }}"
-  version: "10.11.0"
-  ssl_mode: "REQUIRED"
+erpnext_database_override_host: "{{ lookup('ansible.builtin.env', 'DATABASE_HOST') | default(lookup('ansible.builtin.vars', 'DATABASE_HOST'), true) }}"
+erpnext_database_override_port: "{{ lookup('ansible.builtin.env', 'DATABASE_PORT') | default(lookup('ansible.builtin.vars', 'DATABASE_PORT'), true) }}"
+erpnext_database_override_name: "{{ lookup('ansible.builtin.env', 'DATABASE_NAME') | default(lookup('ansible.builtin.vars', 'DATABASE_NAME'), true) }}"
+erpnext_database_override_user: "{{ lookup('ansible.builtin.env', 'DATABASE_USER') | default(lookup('ansible.builtin.vars', 'DATABASE_USER'), true) }}"
+erpnext_database_override_password: "{{ lookup('ansible.builtin.env', 'DATABASE_PASSWORD') | default(lookup('ansible.builtin.vars', 'DATABASE_PASSWORD'), true) }}"
 
-erpnext_cache:
-  host: "{{
-    lookup('ansible.builtin.env', 'CACHE_HOST')
-    | default(lookup('ansible.builtin.vars', 'CACHE_HOST'), true)
-    | default(erpnext_cache_dependency.host, true)
-    | default(lookup('ansible.builtin.vars', 'REDIS_HOST'), true)
-  }}"
-  port: "{{
-    lookup('ansible.builtin.env', 'CACHE_PORT')
-    | default(lookup('ansible.builtin.vars', 'CACHE_PORT'), true)
-    | default(erpnext_cache_dependency.port, true)
-    | default(lookup('ansible.builtin.vars', 'REDIS_PORT'), true)
-  }}"
-  password: "{{
-    lookup('ansible.builtin.env', 'CACHE_PASSWORD')
-    | default(lookup('ansible.builtin.vars', 'CACHE_PASSWORD'), true)
-    | default(erpnext_cache_dependency.password, true)
-  }}"
-  db: 1
-  requirepass: true
-  protected_mode: true
+erpnext_database_required_major_minor: "10.11"
 
-erpnext_queue:
-  host: "{{
-    lookup('ansible.builtin.env', 'QUEUE_HOST')
-    | default(lookup('ansible.builtin.vars', 'QUEUE_HOST'), true)
-    | default(erpnext_queue_dependency.host, true)
-    | default(lookup('ansible.builtin.env', 'CACHE_HOST'), true)
-    | default(lookup('ansible.builtin.vars', 'CACHE_HOST'), true)
-    | default(lookup('ansible.builtin.vars', 'REDIS_HOST'), true)
-  }}"
-  port: "{{
-    lookup('ansible.builtin.env', 'QUEUE_PORT')
-    | default(lookup('ansible.builtin.vars', 'QUEUE_PORT'), true)
-    | default(erpnext_queue_dependency.port, true)
-    | default(lookup('ansible.builtin.env', 'CACHE_PORT'), true)
-    | default(lookup('ansible.builtin.vars', 'CACHE_PORT'), true)
-    | default(lookup('ansible.builtin.vars', 'REDIS_PORT'), true)
-  }}"
-  password: "{{
-    lookup('ansible.builtin.env', 'QUEUE_PASSWORD')
-    | default(lookup('ansible.builtin.vars', 'QUEUE_PASSWORD'), true)
-    | default(erpnext_queue_dependency.password, true)
-    | default(lookup('ansible.builtin.env', 'CACHE_PASSWORD'), true)
-    | default(lookup('ansible.builtin.vars', 'CACHE_PASSWORD'), true)
-  }}"
-  db: 2
-  requirepass: true
-  protected_mode: true
+erpnext_cache_override_host: "{{ lookup('ansible.builtin.env', 'CACHE_HOST') | default(lookup('ansible.builtin.vars', 'CACHE_HOST'), true) }}"
+erpnext_cache_override_port: "{{ lookup('ansible.builtin.env', 'CACHE_PORT') | default(lookup('ansible.builtin.vars', 'CACHE_PORT'), true) }}"
+erpnext_cache_override_password: "{{ lookup('ansible.builtin.env', 'CACHE_PASSWORD') | default(lookup('ansible.builtin.vars', 'CACHE_PASSWORD'), true) }}"
+
+erpnext_queue_override_host: "{{ lookup('ansible.builtin.env', 'QUEUE_HOST') | default(lookup('ansible.builtin.vars', 'QUEUE_HOST'), true) }}"
+erpnext_queue_override_port: "{{ lookup('ansible.builtin.env', 'QUEUE_PORT') | default(lookup('ansible.builtin.vars', 'QUEUE_PORT'), true) }}"
+erpnext_queue_override_password: "{{ lookup('ansible.builtin.env', 'QUEUE_PASSWORD') | default(lookup('ansible.builtin.vars', 'QUEUE_PASSWORD'), true) }}"
+
+erpnext_database_default_name: "erpnext"
+erpnext_database_default_user: "erpnext"
+erpnext_database_default_version: "10.11.0"
+erpnext_database_default_ssl_mode: "REQUIRED"
+
+erpnext_cache_default_db: 1
+
+erpnext_queue_default_db: 2
 
 erpnext_site_name: "erpnext.local"
 erpnext_site_admin_user: "Administrator"
@@ -209,6 +107,15 @@ erpnext_site_admin_password: null
 erpnext_socketio_extra_env: {}
 
 erpnext_extra_env: {}
+
+erpnext_require_proxy: true
+erpnext_proxy_configured: false
+
+erpnext_validate_redis_connections: true
+
+erpnext_runtime_volumes_requested:
+  - "{{ erpnext_volumes.sites }}"
+  - "{{ erpnext_volumes.assets }}"
 
 erpnext_volumes:
   sites: "erpnext-sites"
@@ -232,15 +139,7 @@ erpnext_mounts:
     - target: "/var/run"
       options: "rw,nosuid,nodev,noexec,size=32m"
 
-erpnext_runtime_volumes:
-  "{{ erpnext_volumes.sites }}": {}
-  "{{ erpnext_volumes.assets }}": {}
-
-erpnext_app_fqdn: "{{
-  lookup('ansible.builtin.env', 'APP_FQDN')
-  | default(lookup('ansible.builtin.vars', 'APP_FQDN'), true)
-  | default(erpnext_site_name, true)
-}}"
+erpnext_app_fqdn: "{{ lookup('ansible.builtin.env', 'APP_FQDN') | default(lookup('ansible.builtin.vars', 'APP_FQDN'), true) | default(erpnext_site_name, true) }}"
 
 erpnext_runtime_exports:
   env:
@@ -248,181 +147,198 @@ erpnext_runtime_exports:
     APP_PORT: "{{ erpnext_http_port }}"
     APP_BACKEND_IP: "{{ erpnext_backend_advertised_ip }}"
 
-erpnext_runtime_environment_config:
-  DB_HOST: "{{ erpnext_database.host }}"
-  DB_PORT: "{{ erpnext_database.port }}"
-  DB_NAME: "{{ erpnext_database.name }}"
-  DB_USER: "{{ erpnext_database.user }}"
-  DB_SSL_MODE: "{{ erpnext_database.ssl_mode }}"
-  MARIADB_VERSION: "{{ erpnext_database.version }}"
+erpnext_runtime_environment_base:
+  DB_NAME: "{{ erpnext_database_default_name }}"
+  DB_USER: "{{ erpnext_database_default_user }}"
+  DB_SSL_MODE: "{{ erpnext_database_default_ssl_mode }}"
+  MARIADB_VERSION: "{{ erpnext_database_default_version }}"
   FRAPPE_SITE_NAME_HEADER: "{{ erpnext_site_name }}"
   SITE_NAME: "{{ erpnext_site_name }}"
   SITE_ADMIN: "{{ erpnext_site_admin_user }}"
 
-erpnext_runtime_environment_secrets:
-  DB_PASSWORD: "{{ erpnext_database.password }}"
-  SITE_PASSWORD: "{{ erpnext_site_admin_password }}"
+erpnext_runtime_secret_env_keys:
+  - DB_PASSWORD
+  - SITE_PASSWORD
+  - REDIS_QUEUE
+  - REDIS_QUEUE_FOR_EVENTS
+  - REDIS_CACHE
+  - SOCKETIO_REDIS_URL
+  - REDIS_URL
 
-erpnext_runtime_queue_url: "{{ 'redis://:%s@%s:%s/%s' % ((erpnext_queue.password | urlencode), erpnext_queue.host, erpnext_queue.port, erpnext_queue.db) }}"
-erpnext_runtime_cache_url: "{{ 'redis://:%s@%s:%s/%s' % ((erpnext_cache.password | urlencode), erpnext_cache.host, erpnext_cache.port, erpnext_cache.db) }}"
-
-erpnext_runtime_secret_env_values:
-  DB_PASSWORD: "{{ erpnext_database.password }}"
-  SITE_PASSWORD: "{{ erpnext_site_admin_password }}"
-  REDIS_QUEUE: "{{ erpnext_runtime_queue_url }}"
-  REDIS_QUEUE_FOR_EVENTS: "{{ erpnext_runtime_queue_url }}"
-  REDIS_CACHE: "{{ erpnext_runtime_cache_url }}"
-  SOCKETIO_REDIS_URL: "{{ erpnext_runtime_queue_url }}"
-  REDIS_URL: "{{ erpnext_runtime_queue_url }}"
-
-erpnext_runtime_common_container_settings:
-  user: "{{ erpnext_user_uid }}:{{ erpnext_user_gid }}"
-  read_only: true
-  cap_drop:
-    - "ALL"
-  security_opt:
-    - "no-new-privileges:true"
-  restart: "unless-stopped"
-  stop_grace_period: "1m"
-  networks: "{{ erpnext_runtime_network_names }}"
-  mounts:
-    persistent: "{{ erpnext_mounts.persistent }}"
-    ephemeral: "{{ erpnext_mounts.ephemeral_mounts }}"
-
-erpnext_runtime_services:
+erpnext_runtime_services_blueprint:
   erpnext-frontend:
-    image: "{{ erpnext_images.frontend }}"
-    command: ["nginx"]
-    <<: {{ erpnext_runtime_common_container_settings }}
+    image_key: frontend
+    command:
+      - nginx
     environment:
-      config: "{{ erpnext_runtime_environment_config | combine({'SOCKETIO_PORT': erpnext_internal_ports.socketio | string}) | combine(erpnext_extra_env) }}"
-      secrets: "{{ erpnext_runtime_environment_secrets | combine({'REDIS_QUEUE': erpnext_runtime_queue_url, 'REDIS_QUEUE_FOR_EVENTS': erpnext_runtime_queue_url, 'REDIS_CACHE': erpnext_runtime_cache_url}) }}"
+      config:
+        SOCKETIO_PORT: "{{ erpnext_internal_ports.socketio }}"
+      inherit_secrets:
+        - DB_PASSWORD
+        - SITE_PASSWORD
+        - REDIS_QUEUE
+        - REDIS_QUEUE_FOR_EVENTS
+        - REDIS_CACHE
     ports:
       - published: "{{ erpnext_http_port }}"
         target: "{{ erpnext_internal_ports.frontend }}"
-        protocol: "tcp"
+        protocol: tcp
     depends_on:
       erpnext-backend:
-        condition: "service_healthy"
+        condition: service_healthy
       erpnext-socketio:
-        condition: "service_started"
+        condition: service_started
     healthcheck:
       test:
-        - "CMD-SHELL"
+        - CMD-SHELL
         - "curl -fsS http://127.0.0.1:{{ erpnext_internal_ports.frontend }}/api/method/ping || exit 1"
       interval: "30s"
       timeout: "5s"
       retries: 5
       start_period: "60s"
-    resources:
-      reservations: "{{ erpnext_limits.frontend.reservations }}"
-      limits: "{{ erpnext_limits.frontend.limits }}"
+    limits_key: frontend
   erpnext-backend:
-    image: "{{ erpnext_images.backend }}"
-    command: ["bench", "serve", "--port", "{{ erpnext_internal_ports.backend }}"]
-    <<: {{ erpnext_runtime_common_container_settings }}
+    image_key: backend
+    command:
+      - bench
+      - serve
+      - --port
+      - "{{ erpnext_internal_ports.backend }}"
     environment:
-      config: "{{ erpnext_runtime_environment_config | combine(erpnext_extra_env) }}"
-      secrets: "{{ erpnext_runtime_environment_secrets | combine({'REDIS_QUEUE': erpnext_runtime_queue_url, 'REDIS_QUEUE_FOR_EVENTS': erpnext_runtime_queue_url, 'REDIS_CACHE': erpnext_runtime_cache_url, 'SOCKETIO_REDIS_URL': erpnext_runtime_queue_url}) }}"
+      config: {}
+      inherit_secrets:
+        - DB_PASSWORD
+        - SITE_PASSWORD
+        - REDIS_QUEUE
+        - REDIS_QUEUE_FOR_EVENTS
+        - REDIS_CACHE
+        - SOCKETIO_REDIS_URL
     healthcheck:
       test:
-        - "CMD-SHELL"
+        - CMD-SHELL
         - "curl -fsS http://127.0.0.1:{{ erpnext_internal_ports.backend }}/api/method/ping || exit 1"
       interval: "30s"
       timeout: "5s"
       retries: 5
       start_period: "60s"
-    resources:
-      reservations: "{{ erpnext_limits.backend.reservations }}"
-      limits: "{{ erpnext_limits.backend.limits }}"
+    limits_key: backend
   erpnext-socketio:
-    image: "{{ erpnext_images.socketio }}"
-    command: ["npm", "start"]
-    <<: {{ erpnext_runtime_common_container_settings }}
+    image_key: socketio
+    command:
+      - npm
+      - start
     environment:
-      config: "{{ erpnext_runtime_environment_config | combine(erpnext_socketio_extra_env) }}"
-      secrets: "{{ erpnext_runtime_environment_secrets | combine({'REDIS_QUEUE': erpnext_runtime_queue_url, 'REDIS_QUEUE_FOR_EVENTS': erpnext_runtime_queue_url, 'REDIS_CACHE': erpnext_runtime_cache_url, 'SOCKETIO_REDIS_URL': erpnext_runtime_queue_url, 'REDIS_URL': erpnext_runtime_queue_url}) }}"
+      config: {}
+      inherit_secrets:
+        - DB_PASSWORD
+        - SITE_PASSWORD
+        - REDIS_QUEUE
+        - REDIS_QUEUE_FOR_EVENTS
+        - REDIS_CACHE
+        - SOCKETIO_REDIS_URL
+        - REDIS_URL
     expose:
       - "{{ erpnext_internal_ports.socketio }}"
-    resources:
-      reservations: "{{ erpnext_limits.socketio.reservations }}"
-      limits: "{{ erpnext_limits.socketio.limits }}"
+    limits_key: socketio
   erpnext-scheduler:
-    image: "{{ erpnext_images.scheduler }}"
-    command: ["bench", "schedule"]
-    <<: {{ erpnext_runtime_common_container_settings | combine({'restart': 'on-failure'}) }}
-    environment:
-      config: "{{ erpnext_runtime_environment_config | combine(erpnext_extra_env) }}"
-      secrets: "{{ erpnext_runtime_environment_secrets | combine({'REDIS_QUEUE': erpnext_runtime_queue_url, 'REDIS_QUEUE_FOR_EVENTS': erpnext_runtime_queue_url, 'REDIS_CACHE': erpnext_runtime_cache_url, 'SOCKETIO_REDIS_URL': erpnext_runtime_queue_url}) }}"
-    resources:
-      reservations: "{{ erpnext_limits.scheduler.reservations }}"
-      limits: "{{ erpnext_limits.scheduler.limits }}"
-  erpnext-queue:
-    image: "{{ erpnext_images.queue }}"
-    command: ["bench", "worker", "--queue", "default,short,long"]
-    <<: {{ erpnext_runtime_common_container_settings | combine({'restart': 'on-failure'}) }}
-    environment:
-      config: "{{ erpnext_runtime_environment_config | combine(erpnext_extra_env) }}"
-      secrets: "{{ erpnext_runtime_environment_secrets | combine({'REDIS_QUEUE': erpnext_runtime_queue_url, 'REDIS_QUEUE_FOR_EVENTS': erpnext_runtime_queue_url, 'REDIS_CACHE': erpnext_runtime_cache_url, 'SOCKETIO_REDIS_URL': erpnext_runtime_queue_url}) }}"
-    resources:
-      reservations: "{{ erpnext_limits.queue.reservations }}"
-      limits: "{{ erpnext_limits.queue.limits }}"
-  erpnext-site-creator:
-    image: "{{ erpnext_images.configurator }}"
-    profiles:
-      - "{{ erpnext_configurator_profile }}"
+    image_key: scheduler
     command:
-      - "/bin/bash"
-      - "-ec"
+      - bench
+      - schedule
+    restart: on-failure
+    environment:
+      config: {}
+      inherit_secrets:
+        - DB_PASSWORD
+        - SITE_PASSWORD
+        - REDIS_QUEUE
+        - REDIS_QUEUE_FOR_EVENTS
+        - REDIS_CACHE
+        - SOCKETIO_REDIS_URL
+    limits_key: scheduler
+  erpnext-queue:
+    image_key: queue
+    command:
+      - bench
+      - worker
+      - --queue
+      - default,short,long
+    restart: on-failure
+    environment:
+      config: {}
+      inherit_secrets:
+        - DB_PASSWORD
+        - SITE_PASSWORD
+        - REDIS_QUEUE
+        - REDIS_QUEUE_FOR_EVENTS
+        - REDIS_CACHE
+        - SOCKETIO_REDIS_URL
+    limits_key: queue
+  erpnext-site-creator:
+    image_key: configurator
+    profiles:
+      - setup
+    command:
+      - /bin/bash
+      - -ec
       - |
-          /usr/local/bin/wait-for-it {{ erpnext_database.host }}:{{ erpnext_database.port }} -t {{ erpnext_wait_for_services_timeout }}
-          /usr/local/bin/wait-for-it {{ erpnext_cache.host }}:{{ erpnext_cache.port }} -t {{ erpnext_wait_for_services_timeout }}
-          if [ ! -d "/home/frappe/frappe-bench/sites/{{ erpnext_configurator_site_name }}" ]; then
-            bench new-site {{ erpnext_configurator_site_name }} \
+          /usr/local/bin/wait-for-it {{ erpnext_database.host | default('') }}:{{ erpnext_database.port | default('') }} -t {{ erpnext_wait_for_services_timeout }}
+          /usr/local/bin/wait-for-it {{ erpnext_cache.host | default('') }}:{{ erpnext_cache.port | default('') }} -t {{ erpnext_wait_for_services_timeout }}
+          if [ ! -d "/home/frappe/frappe-bench/sites/{{ erpnext_site_name }}" ]; then
+            bench new-site {{ erpnext_site_name }} \
               --no-mariadb-socket \
               --admin-password "${SITE_PASSWORD}" \
               --db-name "{{ erpnext_database.name }}" \
               --db-password "${DB_PASSWORD}" \
               --install-app {{ erpnext_configurator_install_apps | join(' ') }};
           fi
-    <<: {{ erpnext_runtime_common_container_settings | combine({'restart': 'no'}) }}
+    restart: "no"
     environment:
-      config: "{{ erpnext_runtime_environment_config | combine(erpnext_extra_env) }}"
-      secrets: "{{ erpnext_runtime_environment_secrets | combine({'REDIS_QUEUE': erpnext_runtime_queue_url, 'REDIS_QUEUE_FOR_EVENTS': erpnext_runtime_queue_url, 'REDIS_CACHE': erpnext_runtime_cache_url, 'SOCKETIO_REDIS_URL': erpnext_runtime_queue_url}) }}"
-    resources:
-      reservations: "{{ erpnext_limits.configurator.reservations }}"
-      limits: "{{ erpnext_limits.configurator.limits }}"
+      config: {}
+      inherit_secrets:
+        - DB_PASSWORD
+        - SITE_PASSWORD
+        - REDIS_QUEUE
+        - REDIS_QUEUE_FOR_EVENTS
+        - REDIS_CACHE
+        - SOCKETIO_REDIS_URL
+    limits_key: configurator
   erpnext-upgrade:
-    image: "{{ erpnext_images.backend }}"
+    image_key: backend
     profiles:
-      - "ops"
+      - ops
     command: {{ erpnext_upgrade_command }}
-    <<: {{ erpnext_runtime_common_container_settings | combine({'restart': 'no'}) }}
+    restart: "no"
     environment:
-      config: "{{ erpnext_runtime_environment_config | combine(erpnext_extra_env) }}"
-      secrets: "{{ erpnext_runtime_environment_secrets | combine({'REDIS_QUEUE': erpnext_runtime_queue_url, 'REDIS_QUEUE_FOR_EVENTS': erpnext_runtime_queue_url, 'REDIS_CACHE': erpnext_runtime_cache_url, 'SOCKETIO_REDIS_URL': erpnext_runtime_queue_url}) }}"
-    resources:
-      reservations: "{{ erpnext_limits.scheduler.reservations }}"
-      limits: "{{ erpnext_limits.scheduler.limits }}"
+      config: {}
+      inherit_secrets:
+        - DB_PASSWORD
+        - SITE_PASSWORD
+        - REDIS_QUEUE
+        - REDIS_QUEUE_FOR_EVENTS
+        - REDIS_CACHE
+        - SOCKETIO_REDIS_URL
+    limits_key: upgrade
 
-erpnext_runtime_templates:
-  - adapter: "compose"
-    src: "runtime/compose.yml.j2"
-    template: "runtime/compose.yml.j2"
-    dest: "{{ erpnext_compose_path }}"
-    owner: "{{ erpnext_compose_owner }}"
-    group: "{{ erpnext_compose_group }}"
-    mode: "{{ erpnext_compose_mode }}"
+erpnext_runtime_common_container_settings:
+  user: "{{ erpnext_user_uid }}:{{ erpnext_user_gid }}"
+  read_only: true
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  restart: unless-stopped
+  stop_grace_period: 1m
 
+erpnext_create_site: true
+erpnext_enable_upgrade_helper: true
 
-erpnext_upgrade_play_enabled: true
+erpnext_upgrade_command:
+  - bench
+  - migrate
 
-erpnext_upgrade_command: ["bench", "migrate"]
-
-erpnext_configurator_enabled: true
-
-erpnext_configurator_profile: "setup"
-
-erpnext_configurator_site_name: "{{ erpnext_site_name }}"
 erpnext_configurator_install_apps:
   - erpnext
+
+erpnext_service_contract_runtime: erpnext
+
