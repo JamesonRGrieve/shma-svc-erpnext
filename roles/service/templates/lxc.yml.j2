@@ -28,7 +28,9 @@ x-erpnext-service: &erpnext-service
   user: "{{ erpnext_user_uid }}:{{ erpnext_user_gid }}"
   read_only: true
   tmpfs:
-    - /tmp:rw,nosuid,nodev,noexec,size=64m
+{% for mount in erpnext_tmpfs_mounts %}
+    - {{ mount.target }}:{{ mount.options }}
+{% endfor %}
   cap_drop:
     - ALL
   security_opt:
@@ -44,7 +46,6 @@ x-erpnext-service: &erpnext-service
   volumes:
     - {{ erpnext_volumes.sites }}:/home/frappe/frappe-bench/sites
     - {{ erpnext_volumes.assets }}:/home/frappe/frappe-bench/sites/assets
-    - {{ erpnext_volumes.logs }}:/home/frappe/frappe-bench/logs
 
 services:
   erpnext-frontend:
@@ -210,4 +211,3 @@ networks:
 volumes:
   {{ erpnext_volumes.sites }}:
   {{ erpnext_volumes.assets }}:
-  {{ erpnext_volumes.logs }}:
