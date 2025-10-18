@@ -18,6 +18,51 @@
       Provide ERPNext secrets via your secret manager or inventory.
       Placeholder defaults such as "change-me" are forbidden.
 
+- name: Ensure MariaDB connection settings are sourced
+  ansible.builtin.assert:
+    that:
+      - erpnext_database.host is string
+      - erpnext_database.host | length > 0
+      - (erpnext_database.port | int) > 0
+    fail_msg: >-
+      MariaDB peer exports must provide DATABASE_HOST and DATABASE_PORT.
+      Configure the dependency relationship instead of relying on
+      runtime-specific DNS shortcuts.
+
+- name: Validate Redis connection settings
+  ansible.builtin.assert:
+    that:
+      - erpnext_cache.host is string
+      - erpnext_cache.host | length > 0
+      - (erpnext_cache.port | int) > 0
+      - erpnext_queue.host is string
+      - erpnext_queue.host | length > 0
+      - (erpnext_queue.port | int) > 0
+    fail_msg: >-
+      Redis peer exports must provide CACHE_HOST/CACHE_PORT (and
+      QUEUE_HOST/QUEUE_PORT when distinct). Configure peer bindings
+      instead of depending on Docker specific hostnames.
+
+- name: Ensure ERPNext container images are digest pinned
+  ansible.builtin.assert:
+    that:
+      - erpnext_images.frontend is string
+      - erpnext_images.frontend is match('^.+@sha256:[0-9a-f]{64}$')
+      - erpnext_images.backend is string
+      - erpnext_images.backend is match('^.+@sha256:[0-9a-f]{64}$')
+      - erpnext_images.scheduler is string
+      - erpnext_images.scheduler is match('^.+@sha256:[0-9a-f]{64}$')
+      - erpnext_images.queue is string
+      - erpnext_images.queue is match('^.+@sha256:[0-9a-f]{64}$')
+      - erpnext_images.socketio is string
+      - erpnext_images.socketio is match('^.+@sha256:[0-9a-f]{64}$')
+      - erpnext_images.configurator is string
+      - erpnext_images.configurator is match('^.+@sha256:[0-9a-f]{64}$')
+    fail_msg: >-
+      Container images must be referenced by immutable digests. Provide
+      repository@sha256:<digest> values via ERPNEXT_*_IMAGE or
+      ERPNEXT_*_DIGEST settings.
+
 - name: Ensure Redis queue and cache are isolated
   ansible.builtin.assert:
     that:

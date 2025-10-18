@@ -25,13 +25,28 @@ erpnext_invalid_placeholder_tokens:
   - "changeme"
   - "CHANGE_ME"
 
+erpnext_frontend_digest: "{{ lookup('ansible.builtin.env', 'ERPNEXT_FRONTEND_DIGEST') | default(lookup('ansible.builtin.vars', 'ERPNEXT_FRONTEND_DIGEST'), true) | default('', true) }}"
+erpnext_backend_digest: "{{ lookup('ansible.builtin.env', 'ERPNEXT_BACKEND_DIGEST') | default(lookup('ansible.builtin.vars', 'ERPNEXT_BACKEND_DIGEST'), true) | default('', true) }}"
+erpnext_scheduler_digest: "{{ lookup('ansible.builtin.env', 'ERPNEXT_SCHEDULER_DIGEST') | default(lookup('ansible.builtin.vars', 'ERPNEXT_SCHEDULER_DIGEST'), true) | default(erpnext_backend_digest, true) }}"
+erpnext_queue_digest: "{{ lookup('ansible.builtin.env', 'ERPNEXT_QUEUE_DIGEST') | default(lookup('ansible.builtin.vars', 'ERPNEXT_QUEUE_DIGEST'), true) | default(erpnext_backend_digest, true) }}"
+erpnext_configurator_digest: "{{ lookup('ansible.builtin.env', 'ERPNEXT_CONFIGURATOR_DIGEST') | default(lookup('ansible.builtin.vars', 'ERPNEXT_CONFIGURATOR_DIGEST'), true) | default(erpnext_backend_digest, true) }}"
+erpnext_socketio_digest: "{{ lookup('ansible.builtin.env', 'ERPNEXT_SOCKETIO_DIGEST') | default(lookup('ansible.builtin.vars', 'ERPNEXT_SOCKETIO_DIGEST'), true) | default('', true) }}"
+
+erpnext_image_repositories:
+  frontend: "ghcr.io/frappe/erpnext-nginx"
+  backend: "ghcr.io/frappe/erpnext-worker"
+  scheduler: "ghcr.io/frappe/erpnext-worker"
+  queue: "ghcr.io/frappe/erpnext-worker"
+  socketio: "ghcr.io/frappe/frappe-socketio"
+  configurator: "ghcr.io/frappe/erpnext-worker"
+
 erpnext_images:
-  frontend: "ghcr.io/frappe/erpnext-nginx:v14.39.4"
-  backend: "ghcr.io/frappe/erpnext-worker:v14.39.4"
-  scheduler: "ghcr.io/frappe/erpnext-worker:v14.39.4"
-  queue: "ghcr.io/frappe/erpnext-worker:v14.39.4"
-  socketio: "ghcr.io/frappe/frappe-socketio:v14.39.4"
-  configurator: "ghcr.io/frappe/erpnext-worker:v14.39.4"
+  frontend: "{{ lookup('ansible.builtin.env', 'ERPNEXT_FRONTEND_IMAGE') | default(erpnext_image_repositories.frontend ~ '@' ~ erpnext_frontend_digest, true) }}"
+  backend: "{{ lookup('ansible.builtin.env', 'ERPNEXT_BACKEND_IMAGE') | default(erpnext_image_repositories.backend ~ '@' ~ erpnext_backend_digest, true) }}"
+  scheduler: "{{ lookup('ansible.builtin.env', 'ERPNEXT_SCHEDULER_IMAGE') | default(erpnext_image_repositories.scheduler ~ '@' ~ erpnext_scheduler_digest, true) }}"
+  queue: "{{ lookup('ansible.builtin.env', 'ERPNEXT_QUEUE_IMAGE') | default(erpnext_image_repositories.queue ~ '@' ~ erpnext_queue_digest, true) }}"
+  socketio: "{{ lookup('ansible.builtin.env', 'ERPNEXT_SOCKETIO_IMAGE') | default(erpnext_image_repositories.socketio ~ '@' ~ erpnext_socketio_digest, true) }}"
+  configurator: "{{ lookup('ansible.builtin.env', 'ERPNEXT_CONFIGURATOR_IMAGE') | default(erpnext_image_repositories.configurator ~ '@' ~ erpnext_configurator_digest, true) }}"
 
 erpnext_limits:
   frontend:
@@ -84,26 +99,78 @@ erpnext_networks:
 erpnext_database_required_major_minor: "10.11"
 
 erpnext_database:
-  host: "{{ lookup('ansible.builtin.env', 'DATABASE_HOST') | default('svc-mariadb', true) }}"
-  port: "{{ lookup('ansible.builtin.env', 'DATABASE_PORT') | default(3306, true) }}"
-  name: "{{ lookup('ansible.builtin.env', 'DATABASE_NAME') | default('erpnext', true) }}"
-  user: "{{ lookup('ansible.builtin.env', 'DATABASE_USER') | default('erpnext', true) }}"
-  password: null
+  host: "{{
+    lookup('ansible.builtin.env', 'DATABASE_HOST')
+    | default(lookup('ansible.builtin.vars', 'DATABASE_HOST'), true)
+    | default(lookup('ansible.builtin.vars', 'MARIADB_HOST'), true)
+    | default(lookup('ansible.builtin.vars', 'MARIADB_SERVICE_HOST'), true)
+  }}"
+  port: "{{
+    lookup('ansible.builtin.env', 'DATABASE_PORT')
+    | default(lookup('ansible.builtin.vars', 'DATABASE_PORT'), true)
+    | default(lookup('ansible.builtin.vars', 'MARIADB_PORT'), true)
+    | default(lookup('ansible.builtin.vars', 'MARIADB_SERVICE_PORT'), true)
+    | default(3306, true)
+  }}"
+  name: "{{
+    lookup('ansible.builtin.env', 'DATABASE_NAME')
+    | default(lookup('ansible.builtin.vars', 'DATABASE_NAME'), true)
+    | default('erpnext', true)
+  }}"
+  user: "{{
+    lookup('ansible.builtin.env', 'DATABASE_USER')
+    | default(lookup('ansible.builtin.vars', 'DATABASE_USER'), true)
+    | default('erpnext', true)
+  }}"
+  password: "{{
+    lookup('ansible.builtin.env', 'DATABASE_PASSWORD')
+    | default(lookup('ansible.builtin.vars', 'DATABASE_PASSWORD'), true)
+  }}"
   version: "10.11"
   ssl_mode: "REQUIRED"
 
 erpnext_cache:
-  host: "{{ lookup('ansible.builtin.env', 'CACHE_HOST') | default('svc-redis', true) }}"
-  port: "{{ lookup('ansible.builtin.env', 'CACHE_PORT') | default(6379, true) }}"
-  password: null
+  host: "{{
+    lookup('ansible.builtin.env', 'CACHE_HOST')
+    | default(lookup('ansible.builtin.vars', 'CACHE_HOST'), true)
+    | default(lookup('ansible.builtin.vars', 'REDIS_HOST'), true)
+  }}"
+  port: "{{
+    lookup('ansible.builtin.env', 'CACHE_PORT')
+    | default(lookup('ansible.builtin.vars', 'CACHE_PORT'), true)
+    | default(lookup('ansible.builtin.vars', 'REDIS_PORT'), true)
+    | default(6379, true)
+  }}"
+  password: "{{
+    lookup('ansible.builtin.env', 'CACHE_PASSWORD')
+    | default(lookup('ansible.builtin.vars', 'CACHE_PASSWORD'), true)
+  }}"
   db: 1
   requirepass: true
   protected_mode: true
 
 erpnext_queue:
-  host: "{{ lookup('ansible.builtin.env', 'QUEUE_HOST') | default(lookup('ansible.builtin.env', 'CACHE_HOST'), true) | default('svc-redis', true) }}"
-  port: "{{ lookup('ansible.builtin.env', 'QUEUE_PORT') | default(6379, true) }}"
-  password: null
+  host: "{{
+    lookup('ansible.builtin.env', 'QUEUE_HOST')
+    | default(lookup('ansible.builtin.vars', 'QUEUE_HOST'), true)
+    | default(lookup('ansible.builtin.env', 'CACHE_HOST'), true)
+    | default(lookup('ansible.builtin.vars', 'CACHE_HOST'), true)
+    | default(lookup('ansible.builtin.vars', 'REDIS_HOST'), true)
+  }}"
+  port: "{{
+    lookup('ansible.builtin.env', 'QUEUE_PORT')
+    | default(lookup('ansible.builtin.vars', 'QUEUE_PORT'), true)
+    | default(lookup('ansible.builtin.env', 'CACHE_PORT'), true)
+    | default(lookup('ansible.builtin.vars', 'CACHE_PORT'), true)
+    | default(lookup('ansible.builtin.vars', 'REDIS_PORT'), true)
+    | default(6379, true)
+  }}"
+  password: "{{
+    lookup('ansible.builtin.env', 'QUEUE_PASSWORD')
+    | default(lookup('ansible.builtin.vars', 'QUEUE_PASSWORD'), true)
+    | default(lookup('ansible.builtin.env', 'CACHE_PASSWORD'), true)
+    | default(lookup('ansible.builtin.vars', 'CACHE_PASSWORD'), true)
+  }}"
   db: 2
   requirepass: true
   protected_mode: true
