@@ -43,6 +43,26 @@
       QUEUE_HOST/QUEUE_PORT when distinct). Configure peer bindings
       instead of depending on Docker specific hostnames.
 
+- name: Validate ERPNext image digest inputs
+  vars:
+    erpnext_digest_variables:
+      - { name: "ERPNEXT_FRONTEND_DIGEST", value: "{{ erpnext_frontend_digest }}" }
+      - { name: "ERPNEXT_BACKEND_DIGEST", value: "{{ erpnext_backend_digest }}" }
+      - { name: "ERPNEXT_SCHEDULER_DIGEST", value: "{{ erpnext_scheduler_digest }}" }
+      - { name: "ERPNEXT_QUEUE_DIGEST", value: "{{ erpnext_queue_digest }}" }
+      - { name: "ERPNEXT_CONFIGURATOR_DIGEST", value: "{{ erpnext_configurator_digest }}" }
+      - { name: "ERPNEXT_SOCKETIO_DIGEST", value: "{{ erpnext_socketio_digest }}" }
+  ansible.builtin.assert:
+    that:
+      - item.value is string
+      - (item.value | length == 0) or (item.value is match('^sha256:[0-9a-f]{64}$'))
+    fail_msg: >-
+      {{ item.name }} must be empty or a digest value in the form
+      sha256:<64 hex characters>.
+  loop: "{{ erpnext_digest_variables }}"
+  loop_control:
+    label: "{{ item.name }}"
+
 - name: Ensure ERPNext container images are digest pinned
   ansible.builtin.assert:
     that:
@@ -85,7 +105,8 @@
   ansible.builtin.assert:
     that:
       - erpnext_database.version is string
-      - erpnext_database.version | regex_search('^' ~ erpnext_database_required_major_minor)
+      - erpnext_database.version is version(erpnext_database_required_version_floor, '>=')
+      - erpnext_database.version is version(erpnext_database_required_version_ceiling, '<')
     fail_msg: >-
       ERPNext must target the shared MariaDB {{ erpnext_database_required_major_minor }} catalog.
 
