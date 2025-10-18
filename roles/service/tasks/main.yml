@@ -89,18 +89,49 @@
     fail_msg: >-
       ERPNext must target the shared MariaDB {{ erpnext_database_required_major_minor }} catalog.
 
-- name: Create ERPNext compose directory
-  ansible.builtin.file:
-    path: "{{ erpnext_compose_path | dirname }}"
-    state: directory
-    owner: "{{ erpnext_compose_owner }}"
-    group: "{{ erpnext_compose_group }}"
-    mode: "0750"
+- name: Determine disabled ERPNext runtime services
+  ansible.builtin.set_fact:
+    erpnext_runtime_disabled_services: "{{
+      ([] if erpnext_configurator_enabled else ['erpnext-site-creator'])
+      + ([] if erpnext_upgrade_play_enabled else ['erpnext-upgrade'])
+    }}"
 
-- name: Render ERPNext service definition
-  ansible.builtin.template:
-    src: "lxc.yml.j2"
-    dest: "{{ erpnext_compose_path }}"
-    owner: "{{ erpnext_compose_owner }}"
-    group: "{{ erpnext_compose_group }}"
-    mode: "{{ erpnext_compose_mode }}"
+- name: Initialize ERPNext runtime service map
+  ansible.builtin.set_fact:
+    erpnext_runtime_services_active: {}
+
+- name: Add enabled ERPNext runtime services
+  ansible.builtin.set_fact:
+    erpnext_runtime_services_active: "{{ erpnext_runtime_services_active | combine({item.key: item.value}, recursive=True) }}"
+  loop: "{{ erpnext_runtime_services | dict2items }}"
+  when: item.key not in erpnext_runtime_disabled_services
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Compose ERPNext runtime definition
+  ansible.builtin.set_fact:
+    erpnext_runtime_spec:
+      name: "{{ erpnext_runtime_name }}"
+      networks: "{{ erpnext_networks }}"
+      volumes: "{{ erpnext_runtime_volumes }}"
+      mounts: "{{ erpnext_mounts }}"
+      services: "{{ erpnext_runtime_services_active }}"
+      exports: "{{ erpnext_runtime_exports }}"
+
+- name: Render ERPNext runtime adapters
+  ansible.builtin.include_role:
+    name: common.render_runtime
+  vars:
+    runtime_name: "{{ erpnext_runtime_spec.name }}"
+    runtime_definition: "{{ erpnext_runtime_spec }}"
+    runtime_templates: "{{ erpnext_runtime_templates }}"
+
+- name: Apply ERPNext runtime definition
+  ansible.builtin.include_role:
+    name: common.apply_runtime
+  vars:
+    runtime_name: "{{ erpnext_runtime_spec.name }}"
+    runtime_definition: "{{ erpnext_runtime_spec }}"
+    runtime_exports: "{{ erpnext_runtime_exports }}"
+    runtime_secrets:
+      env: "{{ erpnext_runtime_secret_env_values }}"

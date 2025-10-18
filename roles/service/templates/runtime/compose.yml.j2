@@ -1,0 +1,147 @@
+{% set runtime = runtime_definition | default(erpnext_runtime_spec) %}
+{% set services = runtime.services %}
+version: "3.9"
+
+services:
+{% for service_name, service in services | dictsort %}
+  {{ service_name }}:
+    image: "{{ service.image }}"
+{% if service.user is defined %}
+    user: "{{ service.user }}"
+{% endif %}
+{% if service.read_only is defined %}
+    read_only: {{ service.read_only | bool | tojson }}
+{% endif %}
+{% if service.restart is defined %}
+    restart: "{{ service.restart }}"
+{% endif %}
+{% if service.stop_grace_period is defined %}
+    stop_grace_period: "{{ service.stop_grace_period }}"
+{% endif %}
+{% if service.cap_drop is defined and service.cap_drop %}
+    cap_drop:
+{% for cap in service.cap_drop %}
+      - {{ cap }}
+{% endfor %}
+{% endif %}
+{% if service.security_opt is defined and service.security_opt %}
+    security_opt:
+{% for opt in service.security_opt %}
+      - {{ opt }}
+{% endfor %}
+{% endif %}
+{% if service.command is defined %}
+    command: {{ service.command | to_json }}
+{% endif %}
+{% if service.environment is defined and (service.environment.config or service.environment.secrets) %}
+    environment:
+{% for key, value in (service.environment.config | default({})) | dictsort %}
+      {{ key }}: "{{ value | string }}"
+{% endfor %}
+{% for key, value in (service.environment.secrets | default({})) | dictsort %}
+      {{ key }}: "{{ value | string }}"
+{% endfor %}
+{% endif %}
+{% if service.ports is defined and service.ports %}
+    ports:
+{% for port in service.ports %}
+      - "{{ port.published }}:{{ port.target }}{% if port.protocol is defined %}/{{ port.protocol }}{% endif %}"
+{% endfor %}
+{% endif %}
+{% if service.expose is defined and service.expose %}
+    expose:
+{% for expose in service.expose %}
+      - "{{ expose }}"
+{% endfor %}
+{% endif %}
+{% if service.depends_on is defined and service.depends_on %}
+    depends_on:
+{% for dependency, options in service.depends_on.items() %}
+      {{ dependency }}:
+{% for key, value in options.items() %}
+        {{ key }}: {{ value }}
+{% endfor %}
+{% endfor %}
+{% endif %}
+{% if service.healthcheck is defined %}
+    healthcheck:
+{% if service.healthcheck.test is defined %}
+      test: {{ service.healthcheck.test | to_json }}
+{% endif %}
+{% if service.healthcheck.interval is defined %}
+      interval: {{ service.healthcheck.interval }}
+{% endif %}
+{% if service.healthcheck.timeout is defined %}
+      timeout: {{ service.healthcheck.timeout }}
+{% endif %}
+{% if service.healthcheck.retries is defined %}
+      retries: {{ service.healthcheck.retries }}
+{% endif %}
+{% if service.healthcheck.start_period is defined %}
+      start_period: {{ service.healthcheck.start_period }}
+{% endif %}
+{% endif %}
+{% if service.deploy is defined %}
+    deploy: {{ service.deploy | to_nice_yaml(indent=6) | trim }}
+{% elif service.resources is defined %}
+    deploy:
+      resources:
+{% if service.resources.reservations is defined %}
+        reservations:
+{% for key, value in service.resources.reservations.items() %}
+          {{ key }}: "{{ value }}"
+{% endfor %}
+{% endif %}
+{% if service.resources.limits is defined %}
+        limits:
+{% for key, value in service.resources.limits.items() %}
+          {{ key }}: "{{ value }}"
+{% endfor %}
+{% endif %}
+{% endif %}
+{% if service.networks is defined and service.networks %}
+    networks:
+{% for network in service.networks %}
+      - {{ network }}
+{% endfor %}
+{% endif %}
+{% if service.mounts is defined and service.mounts.persistent is defined and service.mounts.persistent %}
+    volumes:
+{% for mount in service.mounts.persistent %}
+      - {{ mount.source }}:{{ mount.target }}{% if mount.read_only | default(false) %}:ro{% endif %}
+{% endfor %}
+{% endif %}
+{% if service.mounts is defined and service.mounts.ephemeral is defined and service.mounts.ephemeral %}
+    tmpfs:
+{% for mount in service.mounts.ephemeral %}
+      - {{ mount.target }}{% if mount.options is defined and mount.options %}:{{ mount.options }}{% endif %}
+{% endfor %}
+{% endif %}
+{% if service.profiles is defined and service.profiles %}
+    profiles:
+{% for profile in service.profiles %}
+      - {{ profile }}
+{% endfor %}
+{% endif %}
+{% endfor %}
+
+networks:
+{% for network in runtime.networks %}
+  {{ network.name }}:
+{% if network.external is defined %}
+    external: {{ 'true' if network.external | bool else 'false' }}
+{% endif %}
+{% if network.driver is defined %}
+    driver: {{ network.driver }}
+{% endif %}
+{% endfor %}
+
+volumes:
+{% for volume_name, volume_config in runtime.volumes | dictsort %}
+  {{ volume_name }}:
+{% if volume_config %}
+{% for key, value in volume_config.items() %}
+    {{ key }}: {{ value }}
+{% endfor %}
+{% endif %}
+{% endfor %}
