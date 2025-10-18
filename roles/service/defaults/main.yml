@@ -1,0 +1,134 @@
+---
+erpnext_compose_path: "/opt/containers/erpnext/lxc.yml"
+erpnext_compose_owner: "root"
+erpnext_compose_group: "root"
+erpnext_compose_mode: "0640"
+
+erpnext_project_name: "erpnext"
+
+erpnext_user_uid: 1000
+erpnext_user_gid: 1000
+
+erpnext_internal_ports:
+  frontend: 8080
+  backend: 8000
+  socketio: 9000
+
+erpnext_http_port: 8080
+
+erpnext_wait_for_services_timeout: 600
+
+erpnext_invalid_placeholder_tokens:
+  - ""
+  - "change-me"
+  - "CHANGE-ME"
+  - "changeme"
+  - "CHANGE_ME"
+
+erpnext_images:
+  frontend: "ghcr.io/frappe/erpnext-nginx:v14.39.4"
+  backend: "ghcr.io/frappe/erpnext-worker:v14.39.4"
+  scheduler: "ghcr.io/frappe/erpnext-worker:v14.39.4"
+  queue: "ghcr.io/frappe/erpnext-worker:v14.39.4"
+  socketio: "ghcr.io/frappe/frappe-socketio:v14.39.4"
+  configurator: "ghcr.io/frappe/erpnext-worker:v14.39.4"
+
+erpnext_limits:
+  frontend:
+    reservations:
+      cpus: "0.5"
+      memory: "512M"
+    limits:
+      cpus: "2.0"
+      memory: "1G"
+  backend:
+    reservations:
+      cpus: "1.0"
+      memory: "1G"
+    limits:
+      cpus: "3.0"
+      memory: "4G"
+  socketio:
+    reservations:
+      cpus: "0.25"
+      memory: "256M"
+    limits:
+      cpus: "1.0"
+      memory: "512M"
+  scheduler:
+    reservations:
+      cpus: "0.25"
+      memory: "512M"
+    limits:
+      cpus: "1.0"
+      memory: "1G"
+  queue:
+    reservations:
+      cpus: "0.5"
+      memory: "1G"
+    limits:
+      cpus: "2.0"
+      memory: "2G"
+  configurator:
+    reservations:
+      cpus: "0.25"
+      memory: "512M"
+    limits:
+      cpus: "1.0"
+      memory: "1G"
+
+erpnext_networks:
+  - name: "svc-overlay"
+    external: true
+
+erpnext_database_required_major_minor: "10.11"
+
+erpnext_database:
+  host: "{{ lookup('ansible.builtin.env', 'DATABASE_HOST') | default('svc-mariadb', true) }}"
+  port: "{{ lookup('ansible.builtin.env', 'DATABASE_PORT') | default(3306, true) }}"
+  name: "{{ lookup('ansible.builtin.env', 'DATABASE_NAME') | default('erpnext', true) }}"
+  user: "{{ lookup('ansible.builtin.env', 'DATABASE_USER') | default('erpnext', true) }}"
+  password: null
+  version: "10.11"
+  ssl_mode: "REQUIRED"
+
+erpnext_cache:
+  host: "{{ lookup('ansible.builtin.env', 'CACHE_HOST') | default('svc-redis', true) }}"
+  port: "{{ lookup('ansible.builtin.env', 'CACHE_PORT') | default(6379, true) }}"
+  password: null
+  db: 1
+  requirepass: true
+  protected_mode: true
+
+erpnext_queue:
+  host: "{{ lookup('ansible.builtin.env', 'QUEUE_HOST') | default(lookup('ansible.builtin.env', 'CACHE_HOST'), true) | default('svc-redis', true) }}"
+  port: "{{ lookup('ansible.builtin.env', 'QUEUE_PORT') | default(6379, true) }}"
+  password: null
+  db: 2
+  requirepass: true
+  protected_mode: true
+
+erpnext_site_name: "erpnext.local"
+erpnext_site_admin_user: "Administrator"
+erpnext_site_admin_password: null
+
+erpnext_socketio_extra_env: {}
+
+erpnext_extra_env: {}
+
+erpnext_volumes:
+  sites: "erpnext-sites"
+  assets: "erpnext-assets"
+  logs: "erpnext-logs"
+
+erpnext_upgrade_play_enabled: true
+
+erpnext_upgrade_command: ["bench", "migrate"]
+
+erpnext_configurator_enabled: true
+
+erpnext_configurator_profile: "setup"
+
+erpnext_configurator_site_name: "{{ erpnext_site_name }}"
+erpnext_configurator_install_apps:
+  - erpnext
