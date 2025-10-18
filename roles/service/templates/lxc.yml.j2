@@ -1,0 +1,213 @@
+{% set redis_queue_password = (erpnext_queue.password | urlencode) %}
+{% set redis_cache_password = (erpnext_cache.password | urlencode) %}
+{% set redis_queue_url = 'redis://:%s@%s:%s/%s' % (redis_queue_password, erpnext_queue.host, erpnext_queue.port, erpnext_queue.db) %}
+{% set redis_cache_url = 'redis://:%s@%s:%s/%s' % (redis_cache_password, erpnext_cache.host, erpnext_cache.port, erpnext_cache.db) %}
+version: "3.9"
+
+x-erpnext-env: &erpnext-env
+  DB_HOST: "{{ erpnext_database.host }}"
+  DB_PORT: "{{ erpnext_database.port }}"
+  DB_NAME: "{{ erpnext_database.name }}"
+  DB_USER: "{{ erpnext_database.user }}"
+  DB_PASSWORD: "{{ erpnext_database.password }}"
+  DB_SSL_MODE: "{{ erpnext_database.ssl_mode }}"
+  MARIADB_VERSION: "{{ erpnext_database.version }}"
+  REDIS_QUEUE: "{{ redis_queue_url }}"
+  REDIS_QUEUE_FOR_EVENTS: "{{ redis_queue_url }}"
+  REDIS_CACHE: "{{ redis_cache_url }}"
+  SOCKETIO_REDIS_URL: "{{ redis_queue_url }}"
+  FRAPPE_SITE_NAME_HEADER: "{{ erpnext_site_name }}"
+  SITE_NAME: "{{ erpnext_site_name }}"
+  SITE_ADMIN: "{{ erpnext_site_admin_user }}"
+  SITE_PASSWORD: "{{ erpnext_site_admin_password }}"
+{% for key, value in (erpnext_extra_env | default({})).items() %}
+  {{ key }}: "{{ value }}"
+{% endfor %}
+
+x-erpnext-service: &erpnext-service
+  user: "{{ erpnext_user_uid }}:{{ erpnext_user_gid }}"
+  read_only: true
+  tmpfs:
+    - /tmp:rw,nosuid,nodev,noexec,size=64m
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  stop_grace_period: 1m
+  restart: unless-stopped
+  environment:
+    <<: *erpnext-env
+  networks:
+{% for network in erpnext_networks %}
+    - {{ network.name }}
+{% endfor %}
+  volumes:
+    - {{ erpnext_volumes.sites }}:/home/frappe/frappe-bench/sites
+    - {{ erpnext_volumes.assets }}:/home/frappe/frappe-bench/sites/assets
+    - {{ erpnext_volumes.logs }}:/home/frappe/frappe-bench/logs
+
+services:
+  erpnext-frontend:
+    <<: *erpnext-service
+    image: "{{ erpnext_images.frontend }}"
+    environment:
+      <<: *erpnext-env
+      SOCKETIO_PORT: "{{ erpnext_internal_ports.socketio }}"
+    command: ["nginx"]
+    ports:
+      - "{{ erpnext_http_port }}:{{ erpnext_internal_ports.frontend }}"
+    depends_on:
+      erpnext-backend:
+        condition: service_healthy
+      erpnext-socketio:
+        condition: service_started
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "curl -fsS http://127.0.0.1:{{ erpnext_internal_ports.frontend }}/api/method/ping || exit 1"
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        reservations:
+          cpus: "{{ erpnext_limits.frontend.reservations.cpus }}"
+          memory: "{{ erpnext_limits.frontend.reservations.memory }}"
+        limits:
+          cpus: "{{ erpnext_limits.frontend.limits.cpus }}"
+          memory: "{{ erpnext_limits.frontend.limits.memory }}"
+
+  erpnext-backend:
+    <<: *erpnext-service
+    image: "{{ erpnext_images.backend }}"
+    command: ["bench", "serve", "--port", "{{ erpnext_internal_ports.backend }}"]
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "curl -fsS http://127.0.0.1:{{ erpnext_internal_ports.backend }}/api/method/ping || exit 1"
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        reservations:
+          cpus: "{{ erpnext_limits.backend.reservations.cpus }}"
+          memory: "{{ erpnext_limits.backend.reservations.memory }}"
+        limits:
+          cpus: "{{ erpnext_limits.backend.limits.cpus }}"
+          memory: "{{ erpnext_limits.backend.limits.memory }}"
+
+  erpnext-socketio:
+    <<: *erpnext-service
+    image: "{{ erpnext_images.socketio }}"
+    environment:
+      <<: *erpnext-env
+{% for key, value in (erpnext_socketio_extra_env | default({})).items() %}
+      {{ key }}: "{{ value }}"
+{% endfor %}
+      REDIS_URL: "{{ redis_queue_url }}"
+    command: ["npm", "start"]
+    expose:
+      - "{{ erpnext_internal_ports.socketio }}"
+    deploy:
+      resources:
+        reservations:
+          cpus: "{{ erpnext_limits.socketio.reservations.cpus }}"
+          memory: "{{ erpnext_limits.socketio.reservations.memory }}"
+        limits:
+          cpus: "{{ erpnext_limits.socketio.limits.cpus }}"
+          memory: "{{ erpnext_limits.socketio.limits.memory }}"
+
+  erpnext-scheduler:
+    <<: *erpnext-service
+    image: "{{ erpnext_images.scheduler }}"
+    command: ["bench", "schedule"]
+    deploy:
+      restart_policy:
+        condition: any
+      resources:
+        reservations:
+          cpus: "{{ erpnext_limits.scheduler.reservations.cpus }}"
+          memory: "{{ erpnext_limits.scheduler.reservations.memory }}"
+        limits:
+          cpus: "{{ erpnext_limits.scheduler.limits.cpus }}"
+          memory: "{{ erpnext_limits.scheduler.limits.memory }}"
+
+  erpnext-queue:
+    <<: *erpnext-service
+    image: "{{ erpnext_images.queue }}"
+    command: ["bench", "worker", "--queue", "default,short,long"]
+    deploy:
+      restart_policy:
+        condition: any
+      resources:
+        reservations:
+          cpus: "{{ erpnext_limits.queue.reservations.cpus }}"
+          memory: "{{ erpnext_limits.queue.reservations.memory }}"
+        limits:
+          cpus: "{{ erpnext_limits.queue.limits.cpus }}"
+          memory: "{{ erpnext_limits.queue.limits.memory }}"
+
+{% if erpnext_configurator_enabled %}
+  erpnext-site-creator:
+    <<: *erpnext-service
+    image: "{{ erpnext_images.configurator }}"
+    profiles:
+      - "{{ erpnext_configurator_profile }}"
+    command:
+      - /bin/bash
+      - -ec
+      - |
+          /usr/local/bin/wait-for-it {{ erpnext_database.host }}:{{ erpnext_database.port }} -t {{ erpnext_wait_for_services_timeout }}
+          /usr/local/bin/wait-for-it {{ erpnext_cache.host }}:{{ erpnext_cache.port }} -t {{ erpnext_wait_for_services_timeout }}
+          if [ ! -d "/home/frappe/frappe-bench/sites/{{ erpnext_configurator_site_name }}" ]; then
+            bench new-site {{ erpnext_configurator_site_name }} \
+              --no-mariadb-socket \
+              --admin-password "${SITE_PASSWORD}" \
+              --db-name "{{ erpnext_database.name }}" \
+              --db-password "${DB_PASSWORD}" \
+              --install-app {{ erpnext_configurator_install_apps | join(' ') }};
+          fi
+    deploy:
+      restart_policy:
+        condition: none
+      resources:
+        reservations:
+          cpus: "{{ erpnext_limits.configurator.reservations.cpus }}"
+          memory: "{{ erpnext_limits.configurator.reservations.memory }}"
+        limits:
+          cpus: "{{ erpnext_limits.configurator.limits.cpus }}"
+          memory: "{{ erpnext_limits.configurator.limits.memory }}"
+{% endif %}
+
+{% if erpnext_upgrade_play_enabled %}
+  erpnext-upgrade:
+    <<: *erpnext-service
+    image: "{{ erpnext_images.backend }}"
+    profiles:
+      - ops
+    command: {{ erpnext_upgrade_command | to_json }}
+    deploy:
+      restart_policy:
+        condition: none
+      resources:
+        reservations:
+          cpus: "{{ erpnext_limits.scheduler.reservations.cpus }}"
+          memory: "{{ erpnext_limits.scheduler.reservations.memory }}"
+        limits:
+          cpus: "{{ erpnext_limits.scheduler.limits.cpus }}"
+          memory: "{{ erpnext_limits.scheduler.limits.memory }}"
+{% endif %}
+
+networks:
+{% for network in erpnext_networks %}
+  {{ network.name }}:
+    external: {{ 'true' if network.external | default(false) else 'false' }}
+{% endfor %}
+
+volumes:
+  {{ erpnext_volumes.sites }}:
+  {{ erpnext_volumes.assets }}:
+  {{ erpnext_volumes.logs }}:

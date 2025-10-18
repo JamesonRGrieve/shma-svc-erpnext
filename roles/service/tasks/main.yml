@@ -1,0 +1,61 @@
+---
+- name: Validate ERPNext secret values are defined
+  ansible.builtin.assert:
+    that:
+      - erpnext_database.password is string
+      - erpnext_database.password | length > 0
+      - erpnext_database.password not in (erpnext_invalid_placeholder_tokens | default([]))
+      - erpnext_cache.password is string
+      - erpnext_cache.password | length > 0
+      - erpnext_cache.password not in (erpnext_invalid_placeholder_tokens | default([]))
+      - erpnext_queue.password is string
+      - erpnext_queue.password | length > 0
+      - erpnext_queue.password not in (erpnext_invalid_placeholder_tokens | default([]))
+      - erpnext_site_admin_password is string
+      - erpnext_site_admin_password | length > 0
+      - erpnext_site_admin_password not in (erpnext_invalid_placeholder_tokens | default([]))
+    fail_msg: >-
+      Provide ERPNext secrets via your secret manager or inventory.
+      Placeholder defaults such as "change-me" are forbidden.
+
+- name: Ensure Redis queue and cache are isolated
+  ansible.builtin.assert:
+    that:
+      - erpnext_cache.db != erpnext_queue.db
+      - erpnext_cache.requirepass | bool
+      - erpnext_queue.requirepass | bool
+    fail_msg: >-
+      Redis cache and queue endpoints must enforce authentication and use
+      separate logical databases.
+
+- name: Enforce minimum wait timeout for bootstrap helpers
+  ansible.builtin.assert:
+    that:
+      - (erpnext_wait_for_services_timeout | int) >= 300
+    fail_msg: >-
+      ERPNext bootstrap helpers frequently take longer than 120 seconds.
+      Increase erpnext_wait_for_services_timeout to at least 300 seconds.
+
+- name: Enforce MariaDB catalog alignment
+  ansible.builtin.assert:
+    that:
+      - erpnext_database.version is string
+      - erpnext_database.version | regex_search('^' ~ erpnext_database_required_major_minor)
+    fail_msg: >-
+      ERPNext must target the shared MariaDB {{ erpnext_database_required_major_minor }} catalog.
+
+- name: Create ERPNext compose directory
+  ansible.builtin.file:
+    path: "{{ erpnext_compose_path | dirname }}"
+    state: directory
+    owner: "{{ erpnext_compose_owner }}"
+    group: "{{ erpnext_compose_group }}"
+    mode: "0750"
+
+- name: Render ERPNext service definition
+  ansible.builtin.template:
+    src: "lxc.yml.j2"
+    dest: "{{ erpnext_compose_path }}"
+    owner: "{{ erpnext_compose_owner }}"
+    group: "{{ erpnext_compose_group }}"
+    mode: "{{ erpnext_compose_mode }}"
