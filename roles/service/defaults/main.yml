@@ -106,6 +106,13 @@ erpnext_networks:
 erpnext_runtime_network_names: "{{ erpnext_networks | map(attribute='name') | list }}"
 
 erpnext_database_required_major_minor: "10.11"
+erpnext_database_required_version_floor: "{{ erpnext_database_required_major_minor ~ '.0' }}"
+erpnext_database_required_version_ceiling: "{{
+  erpnext_database_required_major_minor.split('.')[0]
+  ~ '.'
+  ~ (((erpnext_database_required_major_minor.split('.')[1] | int) + 1) | string)
+  ~ '.0'
+}}"
 
 erpnext_dependency_exports: "{{ dependency_exports | default({}) }}"
 erpnext_database_dependency: "{{ erpnext_dependency_exports.database | default({}) }}"
@@ -142,7 +149,7 @@ erpnext_database:
     | default(lookup('ansible.builtin.vars', 'DATABASE_PASSWORD'), true)
     | default(erpnext_database_dependency.password, true)
   }}"
-  version: "10.11"
+  version: "10.11.0"
   ssl_mode: "REQUIRED"
 
 erpnext_cache:
